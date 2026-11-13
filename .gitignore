@@ -1,0 +1,46 @@
+# compiled output
+/dist
+/node_modules
+/build
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Tests
+/coverage
+/.nyc_output
+
+# IDEs and editors
+/.idea
+.project
+.classpath
+*.launch
+.settings/
+*.sublime-workspace
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+
+# dotenv environment files: only the example is committed
+.env
+.env.*
+!.env.example
+
+# temp directory
+.temp
+.tmp
+
+# Runtime data
+pids
+*.pid
+*.pid.lock
+
+# Keys
+*.pem
+*.pem.b64

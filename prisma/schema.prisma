@@ -1,0 +1,91 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id                String           @id @default(uuid())
+  fullName          String           @map("full_name")
+  email             String           @unique
+  phone             String?
+  photoUrl          String?          @map("photo_url")
+  passwordHash      String           @map("password_hash")
+  role              Role             @default(STAFF)
+  isActive          Boolean          @default(true) @map("is_active")
+  passwordChangedAt DateTime?        @map("password_changed_at")
+  lastLoginAt       DateTime?        @map("last_login_at")
+  createdAt         DateTime         @default(now()) @map("created_at")
+  updatedAt         DateTime         @updatedAt @map("updated_at")
+  refreshSessions   RefreshSession[]
+  updatedSettings   AppSetting[]     @relation("AppSettingUpdatedBy")
+
+  @@index([role])
+  @@map("users")
+}
+
+/// ADMIN and DEVELOPER have full access (src/common/roles/role-groups.ts).
+/// MANAGER and STAFF get what the role_permissions table grants them.
+enum Role {
+  ADMIN
+  DEVELOPER
+  MANAGER
+  STAFF
+
+  @@map("user_roles")
+}
+
+/// One device's sign-in. The refresh token is stored hashed and rotated on refresh.
+model RefreshSession {
+  id                String   @id @default(uuid())
+  userId            String   @map("user_id")
+  tokenHash         String   @map("token_hash")
+  previousTokenHash String?  @map("previous_token_hash")
+  expiresAt         DateTime @map("expires_at")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_sessions")
+}
+
+/// Catalog of permission keys checked by @RequirePermissions (e.g. user.view).
+/// Keys are stable; the code catalog in src/modules/permissions keeps them in sync.
+model Permission {
+  key         String           @id
+  group       String
+  description String
+  createdAt   DateTime         @default(now()) @map("created_at")
+  roles       RolePermission[]
+
+  @@map("permissions")
+}
+
+/// Permissions granted to a role. Edited through PUT /roles/:role/permissions.
+model RolePermission {
+  role          Role
+  permissionKey String     @map("permission_key")
+  createdAt     DateTime   @default(now()) @map("created_at")
+  permission    Permission @relation(fields: [permissionKey], references: [key], onDelete: Cascade)
+
+  @@id([role, permissionKey])
+  @@index([permissionKey])
+  @@map("role_permissions")
+}
+
+/// Single-row application settings (id is always 1).
+model AppSetting {
+  id            Int      @id @default(1)
+  appName       String   @default("E-Menu") @map("app_name")
+  defaultLocale String   @default("en") @map("default_locale")
+  currency      String   @default("USD")
+  updatedById   String?  @map("updated_by_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  updatedBy     User?    @relation("AppSettingUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@map("app_settings")
+}
