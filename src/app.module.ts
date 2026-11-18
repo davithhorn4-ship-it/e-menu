@@ -15,6 +15,8 @@ import { RolesGuard } from './common/guard/roles.guard';
 import { HealthController } from './common/http/health.controller';
 import { PathMetaInterceptor } from './common/http/path-meta.interceptor';
 import { AuthModule } from './modules/auth/auth.module';
+import { CategoriesModule } from './modules/menu/categories/categories.module';
+import { ShopsModule } from './modules/shops/shops.module';
 import { PermissionsModule } from './modules/permissions/permissions.module';
 import { AppSettingsModule } from './modules/settings/app-settings.module';
 import { UsersModule } from './modules/users/users.module';
@@ -125,6 +127,8 @@ const envFilePaths = [
     AuthModule,
     PermissionsModule,
     AppSettingsModule,
+    ShopsModule,
+    CategoriesModule,
   ],
 
   controllers: [HealthController],

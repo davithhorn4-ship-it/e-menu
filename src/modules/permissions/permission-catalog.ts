@@ -11,6 +11,12 @@ export const PERMISSIONS = {
   USER_EDIT: 'user.edit',
   USER_DELETE: 'user.delete',
   SETTINGS_EDIT: 'settings.edit',
+  CATEGORY_VIEW: 'category.view',
+  CATEGORY_CREATE: 'category.create',
+  CATEGORY_EDIT: 'category.edit',
+  CATEGORY_DELETE: 'category.delete',
+  SHOP_VIEW: 'shop.view',
+  SHOP_EDIT: 'shop.edit',
 
   // Sidebar menus: one key per page. A role without the key does not see the
   // menu, and the page's own endpoints answer 403 where they are guarded.
@@ -40,6 +46,32 @@ export const PERMISSION_CATALOG: PermissionDefinition[] = [
   },
   { key: P.USER_DELETE, group: 'user', description: 'Delete users' },
   { key: P.SETTINGS_EDIT, group: 'settings', description: 'Edit app settings' },
+  {
+    key: P.CATEGORY_VIEW,
+    group: 'category',
+    description: 'View menu categories',
+  },
+  {
+    key: P.CATEGORY_CREATE,
+    group: 'category',
+    description: 'Create menu categories',
+  },
+  {
+    key: P.CATEGORY_EDIT,
+    group: 'category',
+    description: 'Edit and reorder menu categories',
+  },
+  {
+    key: P.CATEGORY_DELETE,
+    group: 'category',
+    description: 'Delete menu categories',
+  },
+  { key: P.SHOP_VIEW, group: 'shop', description: 'View the shop profile' },
+  {
+    key: P.SHOP_EDIT,
+    group: 'shop',
+    description: 'Edit the shop profile, logo, currency and tax settings',
+  },
   { key: P.MENU_DASHBOARD, group: 'menu', description: 'Dashboard menu' },
   {
     key: P.MENU_USER_MANAGEMENT,
@@ -76,9 +108,15 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<Role, PermissionKey[]> = {
     P.USER_CREATE,
     P.USER_EDIT,
     P.SETTINGS_EDIT,
+    P.CATEGORY_VIEW,
+    P.CATEGORY_CREATE,
+    P.CATEGORY_EDIT,
+    P.CATEGORY_DELETE,
+    P.SHOP_VIEW,
+    P.SHOP_EDIT,
     P.MENU_DASHBOARD,
     P.MENU_USER_MANAGEMENT,
     P.MENU_SETTINGS,
   ],
-  [Role.STAFF]: [P.MENU_DASHBOARD],
+  [Role.STAFF]: [P.MENU_DASHBOARD, P.CATEGORY_VIEW, P.SHOP_VIEW],
 };

@@ -29,7 +29,11 @@ export class LocalFileStorage {
   }
 
   /** Saves the bytes; returns the public URL path. */
-  async save(folder: 'users', bytes: Buffer, ext: string): Promise<string> {
+  async save(
+    folder: 'users' | 'shops',
+    bytes: Buffer,
+    ext: string,
+  ): Promise<string> {
     const name = `${randomUUID()}.${ext}`;
     const dir = join(this.root, folder);
     await mkdir(dir, { recursive: true });

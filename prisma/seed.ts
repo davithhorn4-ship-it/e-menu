@@ -79,9 +79,27 @@ async function seedAdmin() {
   console.log(`Admin ${email} created.`);
 }
 
+/**
+ * The restaurant business (single-shop mode, see ShopContextService).
+ * Created once; an existing shop is left unchanged.
+ */
+async function seedShop() {
+  const existing = await prisma.shop.findFirst({ select: { id: true, name: true } });
+  if (existing) {
+    console.log(`Shop "${existing.name}" already exists; left unchanged.`);
+    return;
+  }
+  const name = process.env.SEED_SHOP_NAME?.trim() || 'My Restaurant';
+  await prisma.shop.create({
+    data: { name, nameKm: process.env.SEED_SHOP_NAME_KM?.trim() || '' },
+  });
+  console.log(`Shop "${name}" created.`);
+}
+
 async function main() {
   await seedPermissions();
   await seedAdmin();
+  await seedShop();
 }
 
 main()

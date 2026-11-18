@@ -43,6 +43,7 @@ import type { NextFunction, Request, Response } from 'express';
 /** Routes that may receive multipart/form-data (file uploads). */
 const MULTIPART_ROUTES: Array<{ method: string; path: RegExp }> = [
   { method: 'PUT', path: /^\/users\/[0-9a-f-]{36}\/photo\/?$/i },
+  { method: 'PUT', path: /^\/shop\/profile\/logo\/?$/i },
 ];
 
 async function bootstrap() {
