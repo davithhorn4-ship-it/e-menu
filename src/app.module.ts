@@ -5,6 +5,7 @@ import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule, seconds } from '@nestjs/throttler';
 import { LoggerModule } from 'nestjs-pino';
 import crypto from 'crypto';
+import type { IncomingMessage } from 'http';
 
 import { envValidationSchema } from './config/env.validation';
 import { CsrfOriginGuard } from './common/guard/csrf-origin.guard';
@@ -63,12 +64,17 @@ const envFilePaths = [
             genReqId: (req) =>
               (req.headers['x-request-id'] as string) || crypto.randomUUID(),
 
-            customProps: (req) => ({
-              reqId: (req as any).id,
-              userId:
-                (req as any)?.user?.userId ?? (req as any)?.user?.id ?? null,
-              userRole: (req as any)?.user?.role ?? null,
-            }),
+            customProps: (req) => {
+              const r = req as IncomingMessage & {
+                id?: unknown;
+                user?: { userId?: string; id?: string; role?: string };
+              };
+              return {
+                reqId: r.id,
+                userId: r.user?.userId ?? r.user?.id ?? null,
+                userRole: r.user?.role ?? null,
+              };
+            },
 
             customLogLevel: (_req, res, err) => {
               if (err || res.statusCode >= 500) return 'error';

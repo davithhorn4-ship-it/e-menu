@@ -12,7 +12,11 @@ import {
   MinLength,
 } from 'class-validator';
 
-export class CreateUserDto {
+import { EmptyToNull } from './empty-to-null';
+import { UserLocationDto } from './user-location.dto';
+
+/** Location fields (address, latitude, longitude) come from UserLocationDto. */
+export class CreateUserDto extends UserLocationDto {
   @ApiProperty({ example: 'Sok Dara', maxLength: 120 })
   @IsString()
   @IsNotEmpty()
@@ -35,17 +39,28 @@ export class CreateUserDto {
   @IsEnum(Role)
   role?: Role;
 
-  @ApiPropertyOptional({ example: '+85512345678', maxLength: 30 })
+  @ApiPropertyOptional({
+    example: '+85512345678',
+    maxLength: 30,
+    description: 'Optional. Empty = no phone.',
+  })
+  @EmptyToNull()
   @IsOptional()
   @IsString()
   @MaxLength(30)
-  phone?: string;
+  phone?: string | null;
 
-  @ApiPropertyOptional({ example: 'https://cdn.example.com/u/dara.png' })
+  @ApiPropertyOptional({
+    example: '',
+    maxLength: 500,
+    description:
+      'Optional link to an existing image. Leave empty: the usual way is to upload a file with PUT /users/{id}/photo.',
+  })
+  @EmptyToNull()
   @IsOptional()
   @IsUrl({ require_protocol: true })
   @MaxLength(500)
-  photoUrl?: string;
+  photoUrl?: string | null;
 
   @ApiPropertyOptional({ example: true, default: true })
   @IsOptional()

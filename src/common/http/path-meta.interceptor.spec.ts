@@ -35,7 +35,10 @@ describe('PathMetaInterceptor', () => {
         handle: () => of({ success: true, data: [], meta: { total: 3 } }),
       })
       .subscribe((value) => {
-        expect(value.meta).toMatchObject({ total: 3, path: '/auth/me' });
+        expect((value as { meta: unknown }).meta).toMatchObject({
+          total: 3,
+          path: '/auth/me',
+        });
         done();
       });
   });

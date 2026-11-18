@@ -36,6 +36,9 @@ COPY --from=pruned --chown=node:node /app/node_modules ./node_modules
 COPY --from=pruned --chown=node:node /app/dist ./dist
 COPY --from=pruned --chown=node:node /app/prisma ./prisma
 
+# Uploaded profile photos (UPLOAD_DIR). Mount a volume here to keep them.
+RUN mkdir -p /app/uploads && chown node:node /app/uploads
+
 USER node
 
 EXPOSE 4000

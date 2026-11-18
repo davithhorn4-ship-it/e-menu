@@ -32,6 +32,9 @@ Thumbs.db
 .env.*
 !.env.example
 
+# Uploaded files (profile photos); see UPLOAD_DIR
+/uploads
+
 # temp directory
 .temp
 .tmp

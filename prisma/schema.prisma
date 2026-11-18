@@ -17,15 +17,26 @@ model User {
   isActive          Boolean          @default(true) @map("is_active")
   passwordChangedAt DateTime?        @map("password_changed_at")
   lastLoginAt       DateTime?        @map("last_login_at")
+  /// Free-text address, e.g. "St. 271, Phnom Penh".
+  address           String?
+  /// Map position (WGS 84). Both are set or both are null.
+  latitude          Float?
+  longitude         Float?
+  /// Set when the email OTP is confirmed (sign-up) or an invitation is accepted.
+  emailVerifiedAt   DateTime?        @map("email_verified_at")
   createdAt         DateTime         @default(now()) @map("created_at")
   updatedAt         DateTime         @updatedAt @map("updated_at")
   refreshSessions   RefreshSession[]
   updatedSettings   AppSetting[]     @relation("AppSettingUpdatedBy")
+  tokens            UserToken[]
+  shopMemberships   ShopMember[]
 
   @@index([role])
   @@map("users")
 }
 
+/// Platform roles (the team running the service). Restaurant staff roles are
+/// ShopRole on shop_members.
 /// ADMIN and DEVELOPER have full access (src/common/roles/role-groups.ts).
 /// MANAGER and STAFF get what the role_permissions table grants them.
 enum Role {
@@ -88,4 +99,161 @@ model AppSetting {
   updatedBy     User?    @relation("AppSettingUpdatedBy", fields: [updatedById], references: [id], onDelete: SetNull)
 
   @@map("app_settings")
+}
+
+// ---------------------------------------------------------------------------
+// Step 1 — identity tokens, tenant (shop), branches and staff
+// (design: docs/database-design.md §3.2)
+// ---------------------------------------------------------------------------
+
+/// One-time secrets: sign-up email OTP, password reset link, staff invitation.
+/// Only a hash is stored; the plain value is sent to the user once.
+model UserToken {
+  id        String        @id @default(uuid())
+  userId    String        @map("user_id")
+  type      UserTokenType
+  tokenHash String        @map("token_hash")
+  /// Wrong guesses so far (OTP); the token is refused after the limit.
+  attempts  Int           @default(0)
+  expiresAt DateTime      @map("expires_at")
+  usedAt    DateTime?     @map("used_at")
+  createdAt DateTime      @default(now()) @map("created_at")
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, type])
+  @@index([tokenHash])
+  @@map("user_tokens")
+}
+
+enum UserTokenType {
+  EMAIL_VERIFY
+  PASSWORD_RESET
+  INVITE
+
+  @@map("user_token_type")
+}
+
+enum Currency {
+  USD
+  KHR
+
+  @@map("currency")
+}
+
+enum Locale {
+  km
+  en
+
+  @@map("locale")
+}
+
+/// Restaurant staff roles inside one shop (frontend constants/permissions.ts).
+enum ShopRole {
+  OWNER
+  BRANCH_MANAGER
+  CASHIER
+  KITCHEN
+
+  @@map("shop_role")
+}
+
+/// The tenant: one restaurant business. Every business row belongs to a shop.
+/// Money everywhere is integer minor units of the shop's base currency
+/// (USD cents, KHR riel).
+model Shop {
+  id                 String       @id @default(uuid())
+  name               String
+  nameKm             String       @default("") @map("name_km")
+  logoUrl            String?      @map("logo_url")
+  defaultLanguage    Locale       @default(km) @map("default_language")
+  /// Currency prices are entered in.
+  baseCurrency       Currency     @default(USD) @map("base_currency")
+  /// The guest app also shows the other currency.
+  showSecondCurrency Boolean      @default(true) @map("show_second_currency")
+  /// Riel per 1 USD, used to display the second currency and count the drawer.
+  exchangeRate       Int          @default(4100) @map("exchange_rate")
+  taxPercent         Decimal      @default(0) @map("tax_percent") @db.Decimal(5, 2)
+  servicePercent     Decimal      @default(0) @map("service_percent") @db.Decimal(5, 2)
+  /// true = menu prices already include tax.
+  pricesIncludeTax   Boolean      @default(false) @map("prices_include_tax")
+  isActive           Boolean      @default(true) @map("is_active")
+  createdAt          DateTime     @default(now()) @map("created_at")
+  updatedAt          DateTime     @updatedAt @map("updated_at")
+  branches           Branch[]
+  members            ShopMember[]
+
+  @@map("shops")
+}
+
+/// A restaurant location. Tables, orders, payments and reports resolve to a
+/// branch. Branches referenced by orders are deactivated or soft-deleted
+/// (deleted_at), never removed.
+model Branch {
+  id                String             @id @default(uuid())
+  shopId            String             @map("shop_id")
+  name              String
+  nameKm            String             @default("") @map("name_km")
+  address           String             @default("")
+  phone             String             @default("")
+  /// 7 entries: { day: 0-6 (0 = Sunday), open: "07:00", close: "21:00", closed: bool }.
+  openingHours      Json               @map("opening_hours")
+  dineIn            Boolean            @default(true) @map("dine_in")
+  takeaway          Boolean            @default(true)
+  pickup            Boolean            @default(false)
+  /// Target minutes from Preparing to Ready; the order screen warns past it.
+  prepTargetMinutes Int                @default(15) @map("prep_target_minutes")
+  /// null = use the shop default.
+  taxPercent        Decimal?           @map("tax_percent") @db.Decimal(5, 2)
+  servicePercent    Decimal?           @map("service_percent") @db.Decimal(5, 2)
+  /// Order numbers look like "<prefix>-0042"; unique within the shop.
+  orderPrefix       String             @map("order_prefix") @db.VarChar(4)
+  /// Last order / shift-close number handed out (UPDATE … RETURNING).
+  orderSeq          Int                @default(0) @map("order_seq")
+  closeSeq          Int                @default(0) @map("close_seq")
+  isActive          Boolean            @default(true) @map("is_active")
+  deletedAt         DateTime?          @map("deleted_at")
+  createdAt         DateTime           @default(now()) @map("created_at")
+  updatedAt         DateTime           @updatedAt @map("updated_at")
+  shop              Shop               @relation(fields: [shopId], references: [id], onDelete: Restrict)
+  memberBranches    ShopMemberBranch[]
+
+  @@unique([shopId, orderPrefix])
+  @@index([shopId, isActive])
+  @@map("branches")
+}
+
+/// A user's job in a shop. OWNER sees every branch; other roles only the
+/// branches in shop_member_branches.
+model ShopMember {
+  id        String             @id @default(uuid())
+  shopId    String             @map("shop_id")
+  userId    String             @map("user_id")
+  role      ShopRole           @default(CASHIER)
+  isActive  Boolean            @default(true) @map("is_active")
+  invitedAt DateTime           @default(now()) @map("invited_at")
+  /// null = invitation not accepted yet (frontend "joined").
+  joinedAt  DateTime?          @map("joined_at")
+  createdAt DateTime           @default(now()) @map("created_at")
+  updatedAt DateTime           @updatedAt @map("updated_at")
+  shop      Shop               @relation(fields: [shopId], references: [id], onDelete: Restrict)
+  user      User               @relation(fields: [userId], references: [id], onDelete: Restrict)
+  branches  ShopMemberBranch[]
+
+  @@unique([shopId, userId])
+  @@index([userId])
+  @@index([shopId, role])
+  @@map("shop_members")
+}
+
+/// Branches a (non-owner) member works in.
+model ShopMemberBranch {
+  memberId  String     @map("member_id")
+  branchId  String     @map("branch_id")
+  createdAt DateTime   @default(now()) @map("created_at")
+  member    ShopMember @relation(fields: [memberId], references: [id], onDelete: Cascade)
+  branch    Branch     @relation(fields: [branchId], references: [id], onDelete: Cascade)
+
+  @@id([memberId, branchId])
+  @@index([branchId])
+  @@map("shop_member_branches")
 }

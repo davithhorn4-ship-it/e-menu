@@ -1,6 +1,7 @@
 // src/common/guard/jwt-auth.guard.ts
 import {
   ExecutionContext,
+  HttpException,
   Injectable,
   UnauthorizedException,
 } from '@nestjs/common';
@@ -9,6 +10,7 @@ import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
 
 import { IS_PUBLIC_KEY } from '../decorators/public.decorator';
+import { getCookie } from '../http/request-cookies';
 
 @Injectable()
 export class JwtAuthGuard extends AuthGuard('jwt') {
@@ -25,13 +27,18 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     return super.canActivate(context);
   }
 
-  handleRequest(err: any, user: any, info: any, context: ExecutionContext) {
+  handleRequest(err: any, user: any, info: unknown, context: ExecutionContext) {
+    // JwtStrategy throws specific errors (e.g. AUTH_TOKEN_EXPIRED after a
+    // password change): pass them through instead of a generic code.
+    if (err instanceof HttpException) throw err;
+
     if (err || !user) {
       const req = context.switchToHttp().getRequest<Request>();
       const hasAuthHeader = !!req.headers['authorization'];
-      const hasCookie = !!(req as any)?.cookies?.accessToken;
+      const hasCookie = !!getCookie(req, 'accessToken');
 
-      const jwtName = info?.name;
+      // passport-jwt passes jsonwebtoken errors (TokenExpiredError, ...).
+      const jwtName = info instanceof Error ? info.name : undefined;
       const code =
         jwtName === 'TokenExpiredError'
           ? 'AUTH_TOKEN_EXPIRED'

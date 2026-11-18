@@ -10,10 +10,16 @@ import {
   Put,
   Query,
   Req,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import {
   ApiBadRequestResponse,
   ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
   ApiConflictResponse,
   ApiCookieAuth,
   ApiCreatedResponse,
@@ -21,7 +27,9 @@ import {
   ApiNotFoundResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiPayloadTooLargeResponse,
   ApiTags,
+  ApiUnsupportedMediaTypeResponse,
 } from '@nestjs/swagger';
 
 import { RequirePermissions } from 'src/common/decorators/require-permissions.decorator';
@@ -30,6 +38,7 @@ import { CreateUserDto } from './dto/create-user.dto';
 import { ListUsersQueryDto } from './dto/list-users-query.dto';
 import { ResetUserPasswordDto } from './dto/reset-user-password.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { MAX_PHOTO_BYTES } from './user-photo';
 import { type Actor, UsersService } from './users.service';
 
 const actorOf = (req: AuthRequest): Actor => ({
@@ -117,10 +126,67 @@ export class UsersController {
     };
   }
 
+  @Put(':id/photo')
+  @RequirePermissions('user.edit')
+  @UseInterceptors(
+    // In memory only: the service checks the bytes before anything is saved.
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: MAX_PHOTO_BYTES, files: 1, fields: 0, parts: 1 },
+    }),
+  )
+  @ApiOperation({
+    summary: "Upload a user's profile photo",
+    description:
+      'multipart/form-data with one "file" field: JPEG, PNG or WebP, max 2 MB. ' +
+      'Replaces the previous photo and sets photoUrl to /uploads/users/<random>.<ext> ' +
+      '(served by this API; prefix it with the API address).',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file'],
+      properties: { file: { type: 'string', format: 'binary' } },
+    },
+  })
+  @ApiOkResponse({ description: 'The updated user with its new photoUrl' })
+  @ApiBadRequestResponse({ description: 'PHOTO_REQUIRED' })
+  @ApiPayloadTooLargeResponse({ description: 'PHOTO_TOO_LARGE (over 2 MB)' })
+  @ApiUnsupportedMediaTypeResponse({
+    description: 'PHOTO_TYPE_NOT_ALLOWED (not JPEG, PNG or WebP)',
+  })
+  async uploadPhoto(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UploadedFile() file: Express.Multer.File | undefined,
+    @Req() req: AuthRequest,
+  ) {
+    return {
+      success: true,
+      data: await this.users.setPhoto(id, file, actorOf(req)),
+    };
+  }
+
+  @Delete(':id/photo')
+  @RequirePermissions('user.edit')
+  @ApiOperation({ summary: "Remove a user's profile photo" })
+  async removePhoto(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: AuthRequest,
+  ) {
+    return {
+      success: true,
+      data: await this.users.removePhoto(id, actorOf(req)),
+    };
+  }
+
   @Delete(':id')
   @RequirePermissions('user.delete')
   @ApiOperation({ summary: 'Delete a user' })
   @ApiBadRequestResponse({ description: 'CANNOT_DELETE_SELF' })
+  @ApiConflictResponse({
+    description: 'USER_HAS_SHOP_MEMBERSHIP: deactivate the user instead',
+  })
   async remove(
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: AuthRequest,

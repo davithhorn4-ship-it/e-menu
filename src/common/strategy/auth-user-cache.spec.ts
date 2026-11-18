@@ -17,8 +17,8 @@ const user = (overrides: Partial<AuthUser> = {}): AuthUser => ({
 });
 
 const makePrisma = (rows: Record<string, AuthUser | null>) => {
-  const findUnique = jest.fn(
-    async ({ where }: { where: { id: string } }) => rows[where.id] ?? null,
+  const findUnique = jest.fn(({ where }: { where: { id: string } }) =>
+    Promise.resolve(rows[where.id] ?? null),
   );
   return { prisma: { user: { findUnique } }, findUnique };
 };

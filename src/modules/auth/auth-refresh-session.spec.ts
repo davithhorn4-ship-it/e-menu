@@ -2,9 +2,9 @@ import * as argon2 from 'argon2';
 
 import { AuthService } from './auth.service';
 
-const user = { id: 'u-1', email: 'a@b.c', role: 'ADMIN' };
+const user = { id: 'u-1', email: 'a@b.c', role: 'ADMIN', isActive: true };
 
-async function setup(session: Record<string, unknown> | null) {
+function setup(session: Record<string, unknown> | null) {
   const prisma = {
     refreshSession: {
       findFirst: jest.fn().mockResolvedValue(session && { ...session, user }),
@@ -13,13 +13,15 @@ async function setup(session: Record<string, unknown> | null) {
     },
   };
   const jwt = {
-    verifyAsync: jest.fn(async (token: string) =>
-      token.startsWith('legacy')
-        ? { sub: 'u-1', tokenType: 'refresh' }
-        : { sub: 'u-1', sid: 's-1', tokenType: 'refresh' },
+    verifyAsync: jest.fn((token: string) =>
+      Promise.resolve(
+        token.startsWith('legacy')
+          ? { sub: 'u-1', tokenType: 'refresh' }
+          : { sub: 'u-1', sid: 's-1', tokenType: 'refresh' },
+      ),
     ),
-    signAsync: jest.fn(async (payload: { tokenType: string }) =>
-      payload.tokenType === 'refresh' ? 'rt-next' : 'at-next',
+    signAsync: jest.fn((payload: { tokenType: string }) =>
+      Promise.resolve(payload.tokenType === 'refresh' ? 'rt-next' : 'at-next'),
     ),
   };
   const config = {
@@ -37,7 +39,7 @@ const future = new Date(Date.now() + 60_000);
 
 describe('AuthService.refresh (one session per device)', () => {
   it('rotates the session token and signs it with the session id', async () => {
-    const { prisma, jwt, service } = await setup({
+    const { prisma, jwt, service } = setup({
       id: 's-1',
       userId: 'u-1',
       tokenHash: await argon2.hash('rt-1'),
@@ -60,7 +62,7 @@ describe('AuthService.refresh (one session per device)', () => {
   });
 
   it('accepts the previous token (another tab just rotated) without rotating again', async () => {
-    const { prisma, service } = await setup({
+    const { prisma, service } = setup({
       id: 's-1',
       userId: 'u-1',
       tokenHash: await argon2.hash('rt-2'),
@@ -76,7 +78,7 @@ describe('AuthService.refresh (one session per device)', () => {
   });
 
   it('refuses an unknown token, a missing session and a pre-session token', async () => {
-    const { service } = await setup({
+    const { service } = setup({
       id: 's-1',
       userId: 'u-1',
       tokenHash: await argon2.hash('rt-2'),
@@ -89,13 +91,13 @@ describe('AuthService.refresh (one session per device)', () => {
     await expect(service.refresh('legacy-token')).rejects.toMatchObject({
       response: { code: 'INVALID_REFRESH_TOKEN' },
     });
-    await expect(
-      (await setup(null)).service.refresh('rt-1'),
-    ).rejects.toMatchObject({ response: { code: 'INVALID_REFRESH_TOKEN' } });
+    await expect(setup(null).service.refresh('rt-1')).rejects.toMatchObject({
+      response: { code: 'INVALID_REFRESH_TOKEN' },
+    });
   });
 
   it('logout ends only that device session', async () => {
-    const { prisma, service } = await setup(null);
+    const { prisma, service } = setup(null);
 
     await service.logoutByRefreshToken('rt-1');
 

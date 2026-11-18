@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 import {
   IsEmail,
   IsNotEmpty,
@@ -13,6 +14,11 @@ export class LoginDto {
     description: 'User email address',
     maxLength: 120,
   })
+  // Trim before validating, so " user@x.com " is accepted (the service
+  // lowercases it).
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() : value,
+  )
   @IsEmail()
   @IsNotEmpty()
   @MaxLength(120)

@@ -10,6 +10,7 @@ import { Reflector } from '@nestjs/core';
 import type { Role } from '@prisma/client';
 import { ROLES_KEY } from '../decorators/roles.decorator';
 import { isFullAccess } from '../roles/role-groups';
+import type { AuthRequest } from '../types/auth-request.type';
 
 @Injectable()
 export class RolesGuard implements CanActivate {
@@ -24,7 +25,7 @@ export class RolesGuard implements CanActivate {
     ]);
     if (!required || required.length === 0) return true;
 
-    const req = ctx.switchToHttp().getRequest();
+    const req = ctx.switchToHttp().getRequest<AuthRequest>();
     const user = req.user; // set by JWT strategy
     const userRole: Role | undefined = user?.role;
     const requiredRoles = required.join(', ');

@@ -15,7 +15,7 @@ import { subnet24 } from 'src/common/risk/risk.utils';
 type CustomBody = {
   code?: string;
   message?: string | string[];
-  details?: any;
+  details?: unknown;
   error?: string;
   statusCode?: number;
 };
@@ -182,7 +182,7 @@ export class HttpErrorFilter implements ExceptionFilter {
 
     // ── Message + details ────────────────────────────────────────────────────
     let message: string;
-    let details: any | undefined;
+    let details: unknown;
 
     if (status === 429) {
       message = 'Too many requests. Try again later.';

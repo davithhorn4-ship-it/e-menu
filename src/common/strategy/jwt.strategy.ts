@@ -5,23 +5,28 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
-import { ExtractJwt, Strategy } from 'passport-jwt';
+import { Strategy } from 'passport-jwt';
 import { Request } from 'express';
-import type { Role } from '@prisma/client';
 import { PrismaService } from 'src/prisma/prisma.service';
-import { getAuthUserLookup } from './auth-user-lookup';
+import {
+  type AccessTokenPayload,
+  type AuthUserProblem,
+  authUserProblem,
+  getAuthUserLookup,
+} from './auth-user-lookup';
+import { makeAccessTokenCheck, selectAccessToken } from './access-token';
 import { findAuthUser } from './auth-user-cache';
 
-const cookieExtractor = (req: Request): string | null =>
-  (req as any)?.cookies?.accessToken ?? null;
-
-const extractAccessToken = ExtractJwt.fromExtractors([
-  ExtractJwt.fromAuthHeaderAsBearerToken(),
-  cookieExtractor,
-]);
+const PROBLEM_MESSAGES: Record<AuthUserProblem, string> = {
+  AUTH_UNAUTHORIZED: 'Unauthorized access.',
+  AUTH_TOKEN_EXPIRED: 'Your session has expired. Please sign in again.',
+};
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
+  /** Bearer token, or the cookie when the Bearer token is invalid. */
+  private readonly extractAccessToken: (req: Request) => string | null;
+
   constructor(
     private readonly prisma: PrismaService,
     config: ConfigService,
@@ -32,23 +37,19 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
       throw new InternalServerErrorException('JWT_ACCESS_SECRET is not set');
     }
 
+    const isValid = makeAccessTokenCheck(accessSecret);
+    const extractAccessToken = (req: Request) =>
+      selectAccessToken(req, isValid);
+
     super({
       jwtFromRequest: extractAccessToken,
       secretOrKey: accessSecret,
       passReqToCallback: true,
     });
+    this.extractAccessToken = extractAccessToken;
   }
 
-  async validate(
-    req: Request,
-    payload: {
-      sub: string;
-      email?: string;
-      role?: Role;
-      tokenType?: 'access' | 'refresh';
-      iat?: number;
-    },
-  ) {
+  async validate(req: Request, payload: AccessTokenPayload) {
     if (payload.tokenType !== 'access') {
       throw new UnauthorizedException({
         code: 'AUTH_TOKEN_INVALID',
@@ -58,32 +59,23 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
 
     // Reuse the user loaded by the global attach-user middleware for this
     // exact token; otherwise load it here (short-lived cache).
-    const lookup = getAuthUserLookup(req, extractAccessToken(req), payload.sub);
+    const lookup = getAuthUserLookup(
+      req,
+      this.extractAccessToken(req),
+      payload.sub,
+    );
     const user = lookup
       ? lookup.user
       : await findAuthUser(this.prisma, payload.sub);
 
-    if (!user || !user.isActive) {
+    const problem = authUserProblem(user, payload.iat);
+    if (problem || !user) {
       throw new UnauthorizedException({
-        code: 'AUTH_UNAUTHORIZED',
-        message: 'Unauthorized access.',
+        code: problem ?? 'AUTH_UNAUTHORIZED',
+        message: PROBLEM_MESSAGES[problem ?? 'AUTH_UNAUTHORIZED'],
       });
     }
 
-    const passwordChangedAt = user.passwordChangedAt?.getTime();
-    const issuedAt =
-      typeof payload.iat === 'number' ? payload.iat * 1000 : null;
-    if (passwordChangedAt && issuedAt && issuedAt < passwordChangedAt) {
-      throw new UnauthorizedException({
-        code: 'AUTH_TOKEN_EXPIRED',
-        message: 'Your session has expired. Please sign in again.',
-      });
-    }
-
-    return {
-      userId: user.id,
-      email: user.email,
-      role: user.role,
-    };
+    return { userId: user.id, email: user.email, role: user.role };
   }
 }

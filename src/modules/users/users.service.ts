@@ -4,15 +4,19 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  PayloadTooLargeException,
+  UnsupportedMediaTypeException,
 } from '@nestjs/common';
 import { Prisma, Role } from '@prisma/client';
 import * as argon2 from 'argon2';
 
+import { LocalFileStorage } from 'src/common/storage/local-file-storage';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { ListUsersQueryDto } from './dto/list-users-query.dto';
 import { ResetUserPasswordDto } from './dto/reset-user-password.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { detectPhotoType, MAX_PHOTO_BYTES } from './user-photo';
 import { canManageUserRole } from './user-roles';
 
 /** The signed-in user making a user-management request. */
@@ -25,6 +29,9 @@ export const SAFE_USER_SELECT = {
   email: true,
   phone: true,
   photoUrl: true,
+  address: true,
+  latitude: true,
+  longitude: true,
   role: true,
   isActive: true,
   lastLoginAt: true,
@@ -38,7 +45,10 @@ export type SafeUser = Prisma.UserGetPayload<{
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly storage: LocalFileStorage,
+  ) {}
 
   async findSafeById(id: string): Promise<SafeUser> {
     const user = await this.prisma.user.findUnique({
@@ -104,6 +114,8 @@ export class UsersService {
           email: this.normalizeEmail(dto.email),
           phone: this.optionalText(dto.phone),
           photoUrl: this.optionalText(dto.photoUrl),
+          address: this.optionalText(dto.address),
+          ...this.positionData(dto),
           passwordHash: await hashPassword(dto.password),
           role,
           isActive: dto.isActive ?? true,
@@ -139,6 +151,10 @@ export class UsersService {
       ...(dto.photoUrl !== undefined
         ? { photoUrl: this.optionalText(dto.photoUrl) }
         : {}),
+      ...(dto.address !== undefined
+        ? { address: this.optionalText(dto.address) }
+        : {}),
+      ...this.positionData(dto),
       ...(dto.role !== undefined ? { role: dto.role } : {}),
       ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
     };
@@ -155,10 +171,78 @@ export class UsersService {
           ? [this.prisma.refreshSession.deleteMany({ where: { userId: id } })]
           : []),
       ]);
+      // A replaced or cleared photo URL frees the old uploaded file.
+      if (dto.photoUrl !== undefined && user.photoUrl !== target.photoUrl) {
+        await this.storage.remove(target.photoUrl);
+      }
       return user;
     } catch (error) {
       throw this.mapUniqueEmail(error);
     }
+  }
+
+  /**
+   * Stores an uploaded profile photo (JPEG, PNG or WebP, max 2 MB) and sets
+   * photoUrl to its /uploads/... path. The type comes from the file's bytes,
+   * never from the client's file name or Content-Type.
+   */
+  async setPhoto(
+    id: string,
+    file: { buffer?: Buffer } | undefined,
+    actor: Actor,
+  ): Promise<SafeUser> {
+    const target = await this.findSafeById(id);
+    if (target.id !== actor.userId) this.assertCanManage(actor, target.role);
+
+    const bytes = file?.buffer;
+    if (!bytes?.length) {
+      throw new BadRequestException({
+        code: 'PHOTO_REQUIRED',
+        message: 'Send the image as multipart/form-data in the "file" field.',
+      });
+    }
+    if (bytes.length > MAX_PHOTO_BYTES) {
+      throw new PayloadTooLargeException({
+        code: 'PHOTO_TOO_LARGE',
+        message: 'The photo must be 2 MB or smaller.',
+      });
+    }
+    const type = detectPhotoType(bytes);
+    if (!type) {
+      throw new UnsupportedMediaTypeException({
+        code: 'PHOTO_TYPE_NOT_ALLOWED',
+        message: 'Upload a JPEG, PNG or WebP image.',
+      });
+    }
+
+    const url = await this.storage.save('users', bytes, type);
+    let user: SafeUser;
+    try {
+      user = await this.prisma.user.update({
+        where: { id },
+        data: { photoUrl: url },
+        select: SAFE_USER_SELECT,
+      });
+    } catch (error) {
+      await this.storage.remove(url);
+      throw error;
+    }
+    await this.storage.remove(target.photoUrl);
+    return user;
+  }
+
+  /** Clears the profile photo and deletes the uploaded file. */
+  async removePhoto(id: string, actor: Actor): Promise<SafeUser> {
+    const target = await this.findSafeById(id);
+    if (target.id !== actor.userId) this.assertCanManage(actor, target.role);
+
+    const user = await this.prisma.user.update({
+      where: { id },
+      data: { photoUrl: null },
+      select: SAFE_USER_SELECT,
+    });
+    await this.storage.remove(target.photoUrl);
+    return user;
   }
 
   async resetPassword(id: string, dto: ResetUserPasswordDto, actor: Actor) {
@@ -189,8 +273,48 @@ export class UsersService {
     const target = await this.findSafeById(id);
     this.assertCanManage(actor, target.role);
 
-    await this.prisma.user.delete({ where: { id }, select: { id: true } });
+    try {
+      await this.prisma.user.delete({ where: { id }, select: { id: true } });
+    } catch (error) {
+      // shop_members.user_id is ON DELETE RESTRICT: someone who works in a
+      // shop keeps their account so orders and audit history stay linked.
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2003'
+      ) {
+        throw new ConflictException({
+          code: 'USER_HAS_SHOP_MEMBERSHIP',
+          message:
+            'This user works in a shop. Deactivate the account or remove them from the shop first.',
+        });
+      }
+      throw error;
+    }
+    await this.storage.remove(target.photoUrl);
     return { id };
+  }
+
+  /**
+   * latitude/longitude for a create or update. Both must be sent together:
+   * two numbers to set the map position, or two nulls to clear it.
+   */
+  private positionData(dto: {
+    latitude?: number | null;
+    longitude?: number | null;
+  }): { latitude?: number | null; longitude?: number | null } {
+    const { latitude, longitude } = dto;
+    if (latitude === undefined && longitude === undefined) return {};
+    const bothSet =
+      typeof latitude === 'number' && typeof longitude === 'number';
+    const bothCleared = latitude === null && longitude === null;
+    if (!bothSet && !bothCleared) {
+      throw new BadRequestException({
+        code: 'LOCATION_INCOMPLETE',
+        message:
+          'Send latitude and longitude together (two numbers), or both as null to clear the map position.',
+      });
+    }
+    return { latitude, longitude };
   }
 
   private assertCanManage(actor: Actor, targetRole: Role) {

@@ -44,9 +44,12 @@ export class ListUsersQueryDto {
 
   @ApiPropertyOptional({ example: true })
   @IsOptional()
-  @Transform(({ value }) =>
-    value === 'true' ? true : value === 'false' ? false : value,
-  )
+  // Read the raw query value: with enableImplicitConversion, `value` is
+  // already Boolean('false') === true by the time this runs.
+  @Transform(({ obj, key }) => {
+    const raw: unknown = (obj as Record<string, unknown>)[key];
+    return raw === 'true' ? true : raw === 'false' ? false : raw;
+  })
   @IsBoolean()
   isActive?: boolean;
 }

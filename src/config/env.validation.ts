@@ -16,6 +16,12 @@ export const envValidationSchema = Joi.object({
   API_URL: Joi.string().uri().allow('', null).optional(),
   APP_URLS: Joi.string().required(),
 
+  // --- Proxy: proxies trusted for X-Forwarded-For (src/common/security/trust-proxy.ts)
+  TRUST_PROXY: Joi.string().trim().allow('').default('false'),
+
+  // --- Uploads: folder for uploaded files (profile photos), served at /uploads/
+  UPLOAD_DIR: Joi.string().trim().default('uploads'),
+
   // --- Request / Limits
   BODY_JSON_LIMIT: Joi.string().default('64kb'),
   BODY_URLENCODED_LIMIT: Joi.string().default('16kb'),

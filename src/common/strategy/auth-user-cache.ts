@@ -152,7 +152,8 @@ export async function invalidateAuthUserOnWrite<T>({
   } finally {
     // Also on failure: a failed statement inside a larger transaction may
     // still be followed by other writes; invalidating is always safe.
-    const id = args?.where?.id;
+    const where = (args as { where?: { id?: unknown } } | undefined)?.where;
+    const id = where?.id;
     invalidateAuthUser(typeof id === 'string' ? id : undefined);
   }
 }

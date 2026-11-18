@@ -36,6 +36,8 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@db:5432/e_menu
     ports:
       - "127.0.0.1:4000:4000"
+    volumes:
+      - uploads:/app/uploads
     depends_on:
       db:
         condition: service_healthy
@@ -69,3 +71,4 @@ services:
 
 volumes:
   db-data: {}
+  uploads: {}

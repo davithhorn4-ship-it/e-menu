@@ -31,7 +31,8 @@ export function serverTimingMiddleware(
   res.on('finish', () => {
     // Route pattern (e.g. /users/:id) keeps logs groupable; fall back to the
     // path without the query string for unmatched (catch-all) routes.
-    const pattern: string | undefined = req.route?.path;
+    const routePath = (req.route as { path?: unknown } | undefined)?.path;
+    const pattern = typeof routePath === 'string' ? routePath : undefined;
     const route =
       pattern && !pattern.includes('*')
         ? `${req.baseUrl ?? ''}${pattern}`

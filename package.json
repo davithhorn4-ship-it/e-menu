@@ -29,26 +29,26 @@
     "test:e2e": "jest --config ./test/jest-e2e.json"
   },
   "dependencies": {
-    "@nestjs/common": "11.1.20",
+    "@nestjs/common": "11.2.10",
     "@nestjs/config": "4.0.4",
-    "@nestjs/core": "11.1.20",
+    "@nestjs/core": "11.2.10",
     "@nestjs/jwt": "11.0.2",
     "@nestjs/passport": "11.0.5",
-    "@nestjs/platform-express": "11.1.20",
-    "@nestjs/swagger": "11.4.2",
+    "@nestjs/platform-express": "11.2.10",
+    "@nestjs/swagger": "11.4.8",
     "@nestjs/throttler": "6.5.0",
-    "@prisma/adapter-pg": "7.8.0",
-    "@prisma/client": "7.8.0",
+    "@prisma/adapter-pg": "7.10.1",
+    "@prisma/client": "7.10.1",
     "argon2": "0.44.0",
-    "body-parser": "2.2.2",
+    "body-parser": "2.4.0",
     "class-transformer": "0.5.1",
     "class-validator": "0.15.1",
-    "compression": "1.8.1",
+    "compression": "1.8.2",
     "cookie-parser": "1.4.7",
     "dotenv": "17.4.2",
     "helmet": "8.1.0",
     "hpp": "0.2.3",
-    "joi": "18.2.1",
+    "joi": "18.3.2",
     "nestjs-pino": "4.6.1",
     "passport": "0.7.0",
     "passport-jwt": "4.0.1",
@@ -63,10 +63,13 @@
     "@eslint/js": "10.0.1",
     "@nestjs/cli": "11.0.21",
     "@nestjs/schematics": "11.1.0",
-    "@nestjs/testing": "11.1.20",
+    "@nestjs/testing": "11.2.10",
+    "@types/compression": "1.8.1",
     "@types/cookie-parser": "1.4.10",
     "@types/express": "5.0.6",
+    "@types/hpp": "0.2.7",
     "@types/jest": "30.0.0",
+    "@types/multer": "2.3.0",
     "@types/node": "25.7.0",
     "@types/passport-jwt": "4.0.1",
     "@types/pg": "8.20.0",
@@ -76,7 +79,7 @@
     "globals": "17.6.0",
     "jest": "30.5.2",
     "prettier": "3.8.3",
-    "prisma": "7.8.0",
+    "prisma": "7.10.1",
     "supertest": "7.2.2",
     "ts-jest": "29.4.15",
     "ts-node": "10.9.2",
@@ -85,7 +88,11 @@
     "typescript-eslint": "8.59.3"
   },
   "jest": {
-    "moduleFileExtensions": ["js", "json", "ts"],
+    "moduleFileExtensions": [
+      "js",
+      "json",
+      "ts"
+    ],
     "rootDir": "src",
     "moduleNameMapper": {
       "^src/(.*)$": "<rootDir>/$1"
@@ -94,7 +101,9 @@
     "transform": {
       "^.+\\.(t|j)s$": "ts-jest"
     },
-    "collectCoverageFrom": ["**/*.(t|j)s"],
+    "collectCoverageFrom": [
+      "**/*.(t|j)s"
+    ],
     "coverageDirectory": "../coverage",
     "testEnvironment": "node"
   }

@@ -1,0 +1,693 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Create User</title>
+<!--
+  Design for the dashboard "Create user" page (POST /users + PUT /users/{id}/photo).
+  Mirrors the dashboard's shadcn style (core-system-next-ts-main: Field, FieldGrid, ToggleRow,
+  ImageUploadZone, FormDialog footer). Works on its own: validates like the API, shows the exact
+  request, and can save to a running e-menu-api (Connect to API panel).
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Kantumruy+Pro:wght@400;500;600&family=Roboto:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+:root {
+  --bg: hsl(0 0% 100%); --page: hsl(220 33% 98%); --fg: hsl(0 0% 3.9%); --muted: hsl(0 0% 45.1%);
+  --card: hsl(0 0% 100%); --border: hsl(220 18% 89%); --input: hsl(220 18% 89%); --soft: hsl(0 0% 96.1%);
+  --primary: hsl(229 84% 55%); --primary-soft: hsl(229 84% 96%); --save: oklch(39.8% 0.195 277.366);
+  --danger: hsl(0 84.2% 60.2%); --danger-soft: hsl(0 86% 97%); --ok: hsl(152 60% 36%); --ok-soft: hsl(152 60% 95%);
+  --code-bg: hsl(222 47% 11%); --code-fg: hsl(210 40% 96%);
+  --radius: .5rem;
+  --font: "Roboto", "Kantumruy Pro", ui-sans-serif, system-ui, sans-serif;
+  --mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: hsl(0 0% 3.9%); --page: hsl(240 5% 5%); --fg: hsl(0 0% 98%); --muted: hsl(0 0% 63.9%);
+    --card: hsl(240 5% 6.5%); --border: hsl(240 4% 16%); --input: hsl(240 4% 20%); --soft: hsl(0 0% 14.9%);
+    --primary: hsl(263 85% 62%); --primary-soft: hsl(263 40% 16%); --save: hsl(263 85% 62%);
+    --danger: hsl(0 72% 60%); --danger-soft: hsl(0 40% 14%); --ok: hsl(152 55% 52%); --ok-soft: hsl(152 40% 12%);
+    --code-bg: hsl(240 6% 9%); color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--page); color: var(--fg); font: 14px/1.5 var(--font); }
+html[lang=km] body { font-family: "Kantumruy Pro", "Roboto", ui-sans-serif, system-ui, sans-serif; }
+button, input, select, textarea { font: inherit; color: inherit; }
+.app { display: grid; grid-template-columns: 232px 1fr; min-height: 100vh; }
+/* grid children may shrink below their content width (no sideways scroll on phones) */
+.app > main, .layout > *, .grid2 > *, .account > * { min-width: 0; }
+
+/* sidebar */
+.sidebar { background: var(--bg); border-right: 1px solid var(--border); padding: 16px 12px; position: sticky; top: 0; height: 100vh; }
+.brand { display: flex; align-items: center; gap: 10px; padding: 4px 8px 18px; font-weight: 700; }
+.brand b { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 8px; background: var(--save); color: #fff; }
+.nav a { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: var(--radius); color: var(--muted); text-decoration: none; font-size: 13.5px; }
+.nav a.on { background: var(--primary-soft); color: var(--primary); font-weight: 500; }
+.nav a i { width: 18px; text-align: center; font-style: normal; }
+
+/* top bar */
+.topbar { height: 56px; background: var(--bg); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; padding: 0 24px; position: sticky; top: 0; z-index: 20; }
+.crumbs { color: var(--muted); font-size: 13px; }
+.crumbs b { color: var(--fg); font-weight: 500; }
+.lang { display: inline-flex; border: 1px solid var(--border); border-radius: 999px; padding: 2px; }
+.lang button { border: 0; background: none; padding: 3px 12px; border-radius: 999px; cursor: pointer; font-size: 12.5px; color: var(--muted); }
+.lang button[aria-pressed=true] { background: var(--save); color: #fff; }
+
+/* page */
+.page { padding: 24px; max-width: 1240px; }
+.page-head h1 { margin: 0; font-size: 22px; font-weight: 600; }
+.page-head p { margin: 4px 0 20px; color: var(--muted); }
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 20px; align-items: start; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; }
+.section { padding: 20px 24px; border-bottom: 1px solid var(--border); }
+.section h2 { margin: 0 0 2px; font-size: 15px; font-weight: 600; }
+.section > p.sub { margin: 0 0 16px; color: var(--muted); font-size: 13px; }
+.grid2 { display: grid; gap: 16px; grid-template-columns: 1fr 1fr; }
+.span2 { grid-column: 1 / -1; }
+.account { display: grid; grid-template-columns: 168px 1fr; gap: 20px; }
+
+/* Field */
+.field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.field label { font-size: 13.5px; font-weight: 500; }
+.field label .req { color: var(--danger); margin-left: 2px; }
+.field .hint { font-size: 12px; color: var(--muted); margin: 0; }
+.field .err { font-size: 12px; color: var(--danger); margin: 0; }
+.field.invalid input, .field.invalid select, .field.invalid textarea { border-color: var(--danger); }
+input[type=text], input[type=email], input[type=password], input[type=tel], input[type=number], select, textarea {
+  width: 100%; height: 38px; padding: 0 12px; border: 1px solid var(--input); border-radius: var(--radius); background: var(--bg);
+}
+textarea { height: auto; min-height: 64px; padding: 8px 12px; resize: vertical; }
+input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; border-color: transparent; }
+.with-btn { position: relative; }
+.with-btn input { padding-right: 64px; }
+.with-btn button { position: absolute; right: 4px; top: 4px; height: 30px; border: 0; background: var(--soft); border-radius: 6px; padding: 0 10px; cursor: pointer; font-size: 12px; }
+.strength { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.strength span { height: 4px; border-radius: 4px; background: var(--soft); }
+.strength[data-score="1"] span:nth-child(-n+1) { background: var(--danger); }
+.strength[data-score="2"] span:nth-child(-n+2) { background: hsl(35 92% 50%); }
+.strength[data-score="3"] span:nth-child(-n+3) { background: hsl(80 60% 42%); }
+.strength[data-score="4"] span { background: var(--ok); }
+
+/* photo */
+.photo { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.drop { width: 152px; height: 152px; border: 1.5px dashed var(--input); border-radius: 50%; display: grid; place-items: center; text-align: center; cursor: pointer; overflow: hidden; background: var(--page); color: var(--muted); font-size: 12px; padding: 12px; position: relative; }
+.drop:hover, .drop.over { border-color: var(--primary); color: var(--primary); }
+.drop img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.photo .row { display: flex; gap: 6px; }
+.link { border: 0; background: none; color: var(--primary); cursor: pointer; font-size: 12.5px; padding: 2px 4px; }
+.link.danger { color: var(--danger); }
+
+/* toggle row */
+.toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; }
+.toggle-row p { margin: 0; }
+.toggle-row .t { font-size: 13.5px; font-weight: 500; }
+.switch { position: relative; width: 40px; height: 22px; flex: none; }
+.switch input { opacity: 0; width: 100%; height: 100%; margin: 0; position: absolute; cursor: pointer; z-index: 1; }
+.switch span { position: absolute; inset: 0; background: var(--input); border-radius: 999px; transition: background .15s; }
+.switch span::after { content: ""; position: absolute; left: 3px; top: 3px; width: 16px; height: 16px; background: #fff; border-radius: 50%; transition: transform .15s; }
+.switch input:checked + span { background: var(--save); }
+.switch input:checked + span::after { transform: translateX(18px); }
+.switch input:focus-visible + span { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+/* roles */
+.roles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.role { position: relative; }
+.role input { position: absolute; opacity: 0; }
+.role label { display: block; border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 10px; cursor: pointer; font-size: 13px; font-weight: 500; }
+.role label small { display: block; color: var(--muted); font-weight: 400; font-size: 11.5px; line-height: 1.35; }
+.role input:checked + label { border-color: var(--save); box-shadow: 0 0 0 1px var(--save); background: var(--primary-soft); }
+.role input:focus-visible + label { outline: 2px solid var(--primary); outline-offset: 1px; }
+
+/* map */
+#map { height: 260px; border: 1px solid var(--border); border-radius: var(--radius); z-index: 1; }
+.map-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; }
+.btn { height: 36px; padding: 0 14px; border-radius: var(--radius); border: 1px solid var(--input); background: var(--bg); cursor: pointer; font-weight: 500; font-size: 13.5px; display: inline-flex; align-items: center; gap: 6px; }
+.btn:hover { background: var(--soft); }
+.btn.primary { background: var(--save); border-color: var(--save); color: #fff; }
+.btn.primary:hover { filter: brightness(1.1); }
+.btn:disabled { opacity: .6; cursor: not-allowed; }
+.btn.sm { height: 30px; padding: 0 10px; font-size: 12.5px; }
+
+/* footer */
+.actions { position: sticky; bottom: 0; background: var(--card); border-top: 1px solid var(--border); border-radius: 0 0 12px 12px; padding: 14px 24px; display: flex; justify-content: flex-end; gap: 10px; align-items: center; }
+.actions .note { margin-right: auto; color: var(--muted); font-size: 12.5px; }
+
+/* side */
+.side { display: flex; flex-direction: column; gap: 16px; position: sticky; top: 76px; }
+.side .card { padding: 16px; }
+.side h3 { margin: 0 0 4px; font-size: 14px; font-weight: 600; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.side p { margin: 0 0 10px; color: var(--muted); font-size: 12.5px; }
+.method { font: 600 11px var(--mono); padding: 2px 6px; border-radius: 4px; background: var(--ok-soft); color: var(--ok); }
+pre { margin: 0; background: var(--code-bg); color: var(--code-fg); border-radius: var(--radius); padding: 12px; font: 12px/1.55 var(--mono); overflow: auto; max-height: 340px; }
+.k { color: #93c5fd; } .s { color: #86efac; } .n { color: #fcd34d; } .b { color: #f9a8d4; }
+.stack { display: flex; flex-direction: column; gap: 10px; }
+.conn { font-size: 12.5px; padding: 6px 10px; border-radius: var(--radius); background: var(--soft); color: var(--muted); }
+.conn.on { background: var(--ok-soft); color: var(--ok); }
+.banner { margin: 0 0 16px; padding: 10px 14px; border-radius: var(--radius); font-size: 13.5px; border: 1px solid transparent; }
+.banner.ok { background: var(--ok-soft); color: var(--ok); border-color: color-mix(in oklab, var(--ok) 30%, transparent); }
+.banner.err { background: var(--danger-soft); color: var(--danger); border-color: color-mix(in oklab, var(--danger) 30%, transparent); }
+details summary { cursor: pointer; font-weight: 600; font-size: 14px; }
+details[open] summary { margin-bottom: 10px; }
+
+@media (max-width: 1100px) { .layout { grid-template-columns: 1fr; } .side { position: static; } }
+@media (max-width: 900px) { .app { grid-template-columns: 1fr; } .sidebar { display: none; } }
+@media (max-width: 640px) {
+  .page { padding: 16px; } .topbar { padding: 0 16px; } .section { padding: 16px; } .actions { padding: 12px 16px; }
+  .grid2, .account { grid-template-columns: 1fr; } .roles { grid-template-columns: 1fr 1fr; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar" aria-label="Main menu">
+    <div class="brand"><b>B</b><span>E-Menu</span></div>
+    <nav class="nav">
+      <a href="#"><i>▦</i><span data-t="navDashboard">Dashboard</span></a>
+      <a href="#"><i>☰</i><span data-t="navOrders">Orders</span></a>
+      <a href="#"><i>◫</i><span data-t="navMenu">Menu</span></a>
+      <a href="#" class="on" aria-current="page"><i>☺</i><span data-t="navUsers">Users</span></a>
+      <a href="#"><i>⚙</i><span data-t="navSettings">Settings</span></a>
+    </nav>
+  </aside>
+
+  <main>
+    <header class="topbar">
+      <div class="crumbs"><span data-t="navUsers">Users</span> / <b data-t="title">Create user</b></div>
+      <div class="lang" role="group" aria-label="Language">
+        <button type="button" id="langEn" aria-pressed="true">EN</button>
+        <button type="button" id="langKm" aria-pressed="false">ខ្មែរ</button>
+      </div>
+    </header>
+
+    <div class="page">
+      <div class="page-head">
+        <h1 data-t="title">Create user</h1>
+        <p data-t="subtitle">Add a person who can sign in to the dashboard.</p>
+      </div>
+      <div id="banner" class="banner" hidden role="status"></div>
+
+      <div class="layout">
+        <form id="form" class="card" novalidate>
+          <!-- 1. Account -->
+          <section class="section">
+            <h2 data-t="secAccount">Account</h2>
+            <p class="sub" data-t="secAccountSub">Name, sign-in email and first password.</p>
+            <div class="account">
+              <div class="photo">
+                <div class="drop" id="drop" tabindex="0" role="button" aria-describedby="photoHint">
+                  <span id="dropText" data-t="photoDrop">Drop photo here or click to choose</span>
+                  <img id="photoPreview" alt="" hidden>
+                </div>
+                <input type="file" id="photo" accept="image/jpeg,image/png,image/webp" hidden>
+                <div class="row">
+                  <button type="button" class="link" id="photoPick" data-t="photoChoose">Choose</button>
+                  <button type="button" class="link danger" id="photoClear" hidden data-t="photoRemove">Remove</button>
+                </div>
+                <p class="hint" id="photoHint" style="font-size:11.5px;color:var(--muted);text-align:center;margin:0" data-t="photoHint">JPEG, PNG or WebP · max 2 MB</p>
+                <p class="err" id="err-photo" style="font-size:12px;color:var(--danger);margin:0;text-align:center" hidden></p>
+              </div>
+              <div class="stack" style="gap:16px">
+                <div class="field" id="f-fullName">
+                  <label for="fullName"><span data-t="fullName">Full name</span><span class="req">*</span></label>
+                  <input type="text" id="fullName" maxlength="120" autocomplete="name" placeholder="Sok Dara">
+                  <p class="err" hidden></p>
+                </div>
+                <div class="field" id="f-email">
+                  <label for="email"><span data-t="email">Email</span><span class="req">*</span></label>
+                  <input type="email" id="email" maxlength="120" autocomplete="off" placeholder="dara@example.com">
+                  <p class="hint" data-t="emailHint">Used to sign in. Must be unique.</p>
+                  <p class="err" hidden></p>
+                </div>
+                <div class="field" id="f-password">
+                  <label for="password"><span data-t="password">Password</span><span class="req">*</span></label>
+                  <div class="with-btn">
+                    <input type="password" id="password" maxlength="200" autocomplete="new-password" placeholder="••••••••">
+                    <button type="button" id="pwToggle" data-t="show">Show</button>
+                  </div>
+                  <div class="strength" id="strength" data-score="0" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+                  <p class="hint" data-t="passwordHint">At least 8 characters. The user can change it later.</p>
+                  <p class="err" hidden></p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- 2. Role & status -->
+          <section class="section">
+            <h2 data-t="secAccess">Role and status</h2>
+            <p class="sub" data-t="secAccessSub">What this person may do.</p>
+            <div class="stack" style="gap:16px">
+              <div class="field" id="f-role">
+                <label data-t="role">Role</label>
+                <div class="roles" role="radiogroup" aria-label="Role">
+                  <div class="role"><input type="radio" name="role" id="r-STAFF" value="STAFF" checked><label for="r-STAFF"><span data-t="rStaff">Staff</span><small data-t="rStaffSub">Daily work</small></label></div>
+                  <div class="role"><input type="radio" name="role" id="r-MANAGER" value="MANAGER"><label for="r-MANAGER"><span data-t="rManager">Manager</span><small data-t="rManagerSub">Manages staff</small></label></div>
+                  <div class="role"><input type="radio" name="role" id="r-ADMIN" value="ADMIN"><label for="r-ADMIN"><span data-t="rAdmin">Admin</span><small data-t="rAdminSub">Full access</small></label></div>
+                  <div class="role"><input type="radio" name="role" id="r-DEVELOPER" value="DEVELOPER"><label for="r-DEVELOPER"><span data-t="rDev">Developer</span><small data-t="rDevSub">Full access</small></label></div>
+                </div>
+                <p class="hint" data-t="roleHint">A manager can only create staff.</p>
+                <p class="err" hidden></p>
+              </div>
+              <div class="toggle-row">
+                <div><p class="t" data-t="active">Active</p><p class="hint" style="font-size:12px;color:var(--muted)" data-t="activeHint">Inactive users cannot sign in.</p></div>
+                <label class="switch"><input type="checkbox" id="isActive" checked aria-label="Active"><span></span></label>
+              </div>
+            </div>
+          </section>
+
+          <!-- 3. Contact & location -->
+          <section class="section">
+            <h2 data-t="secContact">Contact and location</h2>
+            <p class="sub" data-t="secContactSub">Optional. Click the map to drop a pin.</p>
+            <div class="grid2">
+              <div class="field" id="f-phone">
+                <label for="phone" data-t="phone">Phone</label>
+                <input type="tel" id="phone" maxlength="30" autocomplete="tel" placeholder="+855 12 345 678">
+                <p class="err" hidden></p>
+              </div>
+              <div class="field" id="f-address">
+                <label for="address" data-t="address">Address</label>
+                <input type="text" id="address" maxlength="300" placeholder="St. 271, Sangkat Tuol Tumpung, Phnom Penh">
+                <p class="err" hidden></p>
+              </div>
+              <div class="field span2">
+                <div class="map-tools">
+                  <label data-t="mapLabel">Location on map</label>
+                  <span style="display:flex;gap:6px;flex-wrap:wrap">
+                    <button type="button" class="btn sm" id="locMe" data-t="useMyLocation">Use my location</button>
+                    <button type="button" class="btn sm" id="locClear" data-t="clearPin">Clear pin</button>
+                  </span>
+                </div>
+                <div id="map" role="application" aria-label="Map: click to set the location"></div>
+                <p class="hint" id="mapFallback" hidden data-t="mapOffline">Map could not load (offline?). Type the coordinates instead.</p>
+              </div>
+              <div class="field" id="f-latitude">
+                <label for="latitude" data-t="latitude">Latitude</label>
+                <input type="number" id="latitude" step="0.000001" min="-90" max="90" placeholder="11.5564">
+                <p class="err" hidden></p>
+              </div>
+              <div class="field" id="f-longitude">
+                <label for="longitude" data-t="longitude">Longitude</label>
+                <input type="number" id="longitude" step="0.000001" min="-180" max="180" placeholder="104.9282">
+                <p class="err" hidden></p>
+              </div>
+            </div>
+          </section>
+
+          <div class="actions">
+            <span class="note"><span class="req" style="color:var(--danger)">*</span> <span data-t="required">Required</span></span>
+            <button type="button" class="btn" id="reset" data-t="cancel">Cancel</button>
+            <button type="submit" class="btn primary" id="save"><span data-t="save">Create user</span></button>
+          </div>
+        </form>
+
+        <aside class="side">
+          <div class="card">
+            <h3><span data-t="previewTitle">Request</span> <span class="method">POST /users</span></h3>
+            <p data-t="previewSub">Exactly what the form sends. Updates as you type.</p>
+            <pre id="preview" aria-live="polite"></pre>
+            <p id="photoStep" style="margin:10px 0 0" hidden><span class="method" style="background:var(--primary-soft);color:var(--primary)">PUT /users/{id}/photo</span> <span data-t="photoStep">then uploads the photo (multipart, field "file").</span></p>
+            <div style="display:flex;gap:8px;margin-top:10px"><button type="button" class="btn sm" id="copy" data-t="copyJson">Copy JSON</button><button type="button" class="btn sm" id="sample" data-t="fillSample">Fill sample</button></div>
+          </div>
+          <details class="card" id="apiBox">
+            <summary data-t="apiTitle">Connect to API (optional)</summary>
+            <div class="stack">
+              <p style="margin:0" data-t="apiSub">Sign in with an admin account to save for real. The token stays in this page only.</p>
+              <div class="field"><label for="apiUrl" data-t="apiUrl">API address</label><input type="text" id="apiUrl" value="http://localhost:4001"></div>
+              <div class="field"><label for="apiEmail" data-t="email">Email</label><input type="email" id="apiEmail" autocomplete="username"></div>
+              <div class="field"><label for="apiPassword" data-t="password">Password</label><input type="password" id="apiPassword" autocomplete="current-password"></div>
+              <button type="button" class="btn" id="apiLogin" data-t="signIn">Sign in</button>
+              <div class="conn" id="conn" data-t="notConnected">Not connected: Create user only checks the form.</div>
+            </div>
+          </details>
+        </aside>
+      </div>
+    </div>
+  </main>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+// ---------------------------------------------------------------- i18n
+const TEXT = {
+  en: {
+    navDashboard: 'Dashboard', navOrders: 'Orders', navMenu: 'Menu', navUsers: 'Users', navSettings: 'Settings',
+    title: 'Create user', subtitle: 'Add a person who can sign in to the dashboard.',
+    secAccount: 'Account', secAccountSub: 'Name, sign-in email and first password.',
+    photoDrop: 'Drop photo here or click to choose', photoChoose: 'Choose', photoRemove: 'Remove', photoHint: 'JPEG, PNG or WebP · max 2 MB',
+    fullName: 'Full name', email: 'Email', emailHint: 'Used to sign in. Must be unique.',
+    password: 'Password', show: 'Show', hide: 'Hide', passwordHint: 'At least 8 characters. The user can change it later.',
+    secAccess: 'Role and status', secAccessSub: 'What this person may do.', role: 'Role',
+    rStaff: 'Staff', rStaffSub: 'Daily work', rManager: 'Manager', rManagerSub: 'Manages staff', rAdmin: 'Admin', rAdminSub: 'Full access', rDev: 'Developer', rDevSub: 'Full access',
+    roleHint: 'A manager can only create staff.', active: 'Active', activeHint: 'Inactive users cannot sign in.',
+    secContact: 'Contact and location', secContactSub: 'Optional. Click the map to drop a pin.',
+    phone: 'Phone', address: 'Address', mapLabel: 'Location on map', useMyLocation: 'Use my location', clearPin: 'Clear pin',
+    mapOffline: 'Map could not load (offline?). Type the coordinates instead.', latitude: 'Latitude', longitude: 'Longitude',
+    required: 'Required', cancel: 'Cancel', save: 'Create user', saving: 'Saving…',
+    previewTitle: 'Request', previewSub: 'Exactly what the form sends. Updates as you type.', photoStep: 'then uploads the photo (multipart, field "file").',
+    copyJson: 'Copy JSON', copied: 'Copied', fillSample: 'Fill sample',
+    apiTitle: 'Connect to API (optional)', apiSub: 'Sign in with an admin account to save for real. The token stays in this page only.',
+    apiUrl: 'API address', signIn: 'Sign in', notConnected: 'Not connected: Create user only checks the form.',
+    connected: 'Connected as {who}. Create user saves to the API.', loginFailed: 'Sign-in failed: {msg}', cannotReach: 'Cannot reach the API at {url}. Is it running?',
+    e_required: 'This field is required.', e_email: 'Enter a valid email, like name@example.com.', e_pwShort: 'Use at least 8 characters.',
+    e_max: 'Too long (max {n} characters).', e_lat: 'Latitude is between -90 and 90.', e_lng: 'Longitude is between -180 and 180.',
+    e_pair: 'Fill both latitude and longitude, or neither.', e_photoType: 'Only JPEG, PNG or WebP images.', e_photoSize: 'The photo must be 2 MB or smaller.',
+    e_taken: 'This email is already used by another user.', e_role: 'Your role cannot create this role.', e_fix: 'Please fix the highlighted fields.',
+    checkedOnly: 'The form is valid. Connect to the API (right panel) to save it, or copy the JSON.',
+    created: 'User {name} created.', createdPhoto: 'User {name} created with photo.', photoFailed: 'User created, but the photo upload failed: {msg}',
+    geoFailed: 'Could not get your location.',
+  },
+  km: {
+    navDashboard: 'ផ្ទាំងគ្រប់គ្រង', navOrders: 'ការកម្ម៉ង់', navMenu: 'ម៉ឺនុយ', navUsers: 'អ្នកប្រើប្រាស់', navSettings: 'ការកំណត់',
+    title: 'បង្កើតអ្នកប្រើប្រាស់', subtitle: 'បន្ថែមមនុស្សដែលអាចចូលប្រើផ្ទាំងគ្រប់គ្រង។',
+    secAccount: 'គណនី', secAccountSub: 'ឈ្មោះ អ៊ីមែលសម្រាប់ចូល និងពាក្យសម្ងាត់ដំបូង។',
+    photoDrop: 'ទម្លាក់រូបថតនៅទីនេះ ឬចុចដើម្បីជ្រើស', photoChoose: 'ជ្រើសរើស', photoRemove: 'លុបចេញ', photoHint: 'JPEG, PNG ឬ WebP · មិនលើស 2 MB',
+    fullName: 'ឈ្មោះពេញ', email: 'អ៊ីមែល', emailHint: 'ប្រើសម្រាប់ចូល។ មិនអាចស្ទួនគ្នាបានទេ។',
+    password: 'ពាក្យសម្ងាត់', show: 'បង្ហាញ', hide: 'លាក់', passwordHint: 'យ៉ាងតិច ៨ តួអក្សរ។ អ្នកប្រើអាចប្តូរនៅពេលក្រោយ។',
+    secAccess: 'តួនាទី និងស្ថានភាព', secAccessSub: 'អ្វីដែលអ្នកនេះអាចធ្វើបាន។', role: 'តួនាទី',
+    rStaff: 'បុគ្គលិក', rStaffSub: 'ការងារប្រចាំថ្ងៃ', rManager: 'អ្នកគ្រប់គ្រង', rManagerSub: 'គ្រប់គ្រងបុគ្គលិក', rAdmin: 'អ្នកគ្រប់គ្រងប្រព័ន្ធ', rAdminSub: 'សិទ្ធិពេញលេញ', rDev: 'អ្នកអភិវឌ្ឍន៍', rDevSub: 'សិទ្ធិពេញលេញ',
+    roleHint: 'អ្នកគ្រប់គ្រងអាចបង្កើតបានតែបុគ្គលិកប៉ុណ្ណោះ។', active: 'សកម្ម', activeHint: 'អ្នកប្រើដែលមិនសកម្មមិនអាចចូលបានទេ។',
+    secContact: 'ទំនាក់ទំនង និងទីតាំង', secContactSub: 'ស្រេចចិត្ត។ ចុចលើផែនទីដើម្បីដាក់ចំណុច។',
+    phone: 'លេខទូរសព្ទ', address: 'អាសយដ្ឋាន', mapLabel: 'ទីតាំងលើផែនទី', useMyLocation: 'ប្រើទីតាំងរបស់ខ្ញុំ', clearPin: 'លុបចំណុច',
+    mapOffline: 'ផែនទីមិនអាចបង្ហាញបាន (គ្មានអ៊ីនធឺណិត?)។ សូមវាយកូអរដោនេជំនួស។', latitude: 'រយៈទទឹង', longitude: 'រយៈបណ្តោយ',
+    required: 'ចាំបាច់', cancel: 'បោះបង់', save: 'បង្កើតអ្នកប្រើប្រាស់', saving: 'កំពុងរក្សាទុក…',
+    previewTitle: 'សំណើ', previewSub: 'អ្វីដែលទម្រង់នឹងផ្ញើ។ ធ្វើបច្ចុប្បន្នភាពពេលអ្នកវាយ។', photoStep: 'បន្ទាប់មកផ្ទុករូបថតឡើង (multipart, វាល "file")។',
+    copyJson: 'ចម្លង JSON', copied: 'បានចម្លង', fillSample: 'បំពេញឧទាហរណ៍',
+    apiTitle: 'ភ្ជាប់ទៅ API (ស្រេចចិត្ត)', apiSub: 'ចូលដោយគណនីអ្នកគ្រប់គ្រងដើម្បីរក្សាទុកពិតប្រាកដ។ Token នៅតែក្នុងទំព័រនេះប៉ុណ្ណោះ។',
+    apiUrl: 'អាសយដ្ឋាន API', signIn: 'ចូល', notConnected: 'មិនទាន់ភ្ជាប់៖ ប៊ូតុងបង្កើតគ្រាន់តែពិនិត្យទម្រង់។',
+    connected: 'បានភ្ជាប់ជា {who}។ ប៊ូតុងបង្កើតនឹងរក្សាទុកទៅ API។', loginFailed: 'ចូលមិនបាន៖ {msg}', cannotReach: 'មិនអាចភ្ជាប់ទៅ API នៅ {url}។ តើវាកំពុងដំណើរការទេ?',
+    e_required: 'សូមបំពេញវាលនេះ។', e_email: 'សូមបញ្ចូលអ៊ីមែលត្រឹមត្រូវ ដូចជា name@example.com។', e_pwShort: 'សូមប្រើយ៉ាងតិច ៨ តួអក្សរ។',
+    e_max: 'វែងពេក (អតិបរមា {n} តួអក្សរ)។', e_lat: 'រយៈទទឹងត្រូវនៅចន្លោះ -90 និង 90។', e_lng: 'រយៈបណ្តោយត្រូវនៅចន្លោះ -180 និង 180។',
+    e_pair: 'សូមបំពេញទាំងរយៈទទឹង និងរយៈបណ្តោយ ឬទុកទទេទាំងពីរ។', e_photoType: 'តែរូបភាព JPEG, PNG ឬ WebP ប៉ុណ្ណោះ។', e_photoSize: 'រូបថតត្រូវមិនលើស 2 MB។',
+    e_taken: 'អ៊ីមែលនេះត្រូវបានប្រើដោយអ្នកប្រើម្នាក់ទៀតរួចហើយ។', e_role: 'តួនាទីរបស់អ្នកមិនអាចបង្កើតតួនាទីនេះបានទេ។', e_fix: 'សូមកែវាលដែលបានសម្គាល់។',
+    checkedOnly: 'ទម្រង់ត្រឹមត្រូវ។ ភ្ជាប់ទៅ API (ផ្ទាំងខាងស្តាំ) ដើម្បីរក្សាទុក ឬចម្លង JSON។',
+    created: 'បានបង្កើតអ្នកប្រើ {name}។', createdPhoto: 'បានបង្កើតអ្នកប្រើ {name} ជាមួយរូបថត។', photoFailed: 'បានបង្កើតអ្នកប្រើ ប៉ុន្តែផ្ទុករូបថតមិនបាន៖ {msg}',
+    geoFailed: 'មិនអាចយកទីតាំងរបស់អ្នកបានទេ។',
+  },
+};
+let lang = 'en';
+const t = (key, vars = {}) => (TEXT[lang][key] ?? TEXT.en[key] ?? key).replace(/\{(\w+)\}/g, (_, k) => vars[k] ?? '');
+function applyLang(next) {
+  lang = next;
+  document.documentElement.lang = next;
+  document.querySelectorAll('[data-t]').forEach((el) => (el.textContent = t(el.dataset.t)));
+  document.getElementById('langEn').setAttribute('aria-pressed', String(next === 'en'));
+  document.getElementById('langKm').setAttribute('aria-pressed', String(next === 'km'));
+  document.getElementById('pwToggle').textContent = t(pw.type === 'password' ? 'show' : 'hide');
+  refreshConn();
+  if (submitted) validate();
+  try { localStorage.setItem('createUserLang', next); } catch {}
+}
+
+// ---------------------------------------------------------------- form state
+const $ = (id) => document.getElementById(id);
+const pw = $('password');
+const lat = $('latitude'), lng = $('longitude');
+let photoFile = null, submitted = false, token = null, who = null;
+const touched = new Set();
+
+function payload() {
+  const num = (el) => (el.value.trim() === '' ? null : Number(el.value));
+  return {
+    fullName: $('fullName').value.trim(),
+    email: $('email').value.trim().toLowerCase(),
+    password: pw.value,
+    role: document.querySelector('input[name=role]:checked').value,
+    phone: $('phone').value.trim(),
+    photoUrl: '',
+    isActive: $('isActive').checked,
+    address: $('address').value.trim(),
+    latitude: num(lat),
+    longitude: num(lng),
+  };
+}
+
+function renderPreview() {
+  const p = payload();
+  const shown = { ...p, password: p.password ? '•'.repeat(Math.min(p.password.length, 12)) : '' };
+  const json = JSON.stringify(shown, null, 2)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/("[^"]+")(: )/g, '<span class="k">$1</span>$2')
+    .replace(/: ("[^"]*")/g, ': <span class="s">$1</span>')
+    .replace(/: (-?\d+(\.\d+)?)/g, ': <span class="n">$1</span>')
+    .replace(/: (true|false|null)/g, ': <span class="b">$1</span>');
+  $('preview').innerHTML = json;
+  $('photoStep').hidden = !photoFile;
+}
+
+// ---------------------------------------------------------------- validation (same rules as the API)
+function setError(id, msg) {
+  const box = $('f-' + id);
+  if (!box) return;
+  const err = box.querySelector('.err');
+  box.classList.toggle('invalid', !!msg);
+  err.hidden = !msg;
+  err.textContent = msg || '';
+  const input = box.querySelector('input,select,textarea');
+  if (input) input.setAttribute('aria-invalid', msg ? 'true' : 'false');
+}
+function validate() {
+  const p = payload();
+  const errors = {};
+  if (!p.fullName) errors.fullName = t('e_required');
+  else if (p.fullName.length > 120) errors.fullName = t('e_max', { n: 120 });
+  if (!p.email) errors.email = t('e_required');
+  else if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(p.email)) errors.email = t('e_email');
+  else if (p.email.length > 120) errors.email = t('e_max', { n: 120 });
+  if (!p.password) errors.password = t('e_required');
+  else if (p.password.length < 8) errors.password = t('e_pwShort');
+  else if (p.password.length > 200) errors.password = t('e_max', { n: 200 });
+  if (p.phone.length > 30) errors.phone = t('e_max', { n: 30 });
+  if (p.address.length > 300) errors.address = t('e_max', { n: 300 });
+  const hasLat = p.latitude !== null, hasLng = p.longitude !== null;
+  if (hasLat && (!Number.isFinite(p.latitude) || p.latitude < -90 || p.latitude > 90)) errors.latitude = t('e_lat');
+  if (hasLng && (!Number.isFinite(p.longitude) || p.longitude < -180 || p.longitude > 180)) errors.longitude = t('e_lng');
+  if (hasLat !== hasLng) errors[hasLat ? 'longitude' : 'latitude'] = t('e_pair');
+  // Show a field's error only once it was touched, or after Save was clicked.
+  ['fullName', 'email', 'password', 'phone', 'address', 'latitude', 'longitude', 'role'].forEach((k) => setError(k, submitted || touched.has(k) ? errors[k] : ''));
+  return errors;
+}
+
+// ---------------------------------------------------------------- password
+function score(v) {
+  if (!v) return 0;
+  let s = v.length >= 8 ? 1 : 0;
+  if (v.length >= 12) s++;
+  if (/[A-Z]/.test(v) && /[a-z]/.test(v)) s++;
+  if (/\d/.test(v) && /[^A-Za-z0-9]/.test(v)) s++;
+  return Math.max(1, s);
+}
+$('pwToggle').addEventListener('click', () => {
+  pw.type = pw.type === 'password' ? 'text' : 'password';
+  $('pwToggle').textContent = t(pw.type === 'password' ? 'show' : 'hide');
+});
+
+// ---------------------------------------------------------------- photo (checked by its bytes, like the API)
+async function photoType(file) {
+  const b = new Uint8Array(await file.slice(0, 12).arrayBuffer());
+  if (b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff) return 'jpg';
+  if ([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a].every((v, i) => b[i] === v)) return 'png';
+  const ascii = (from, to) => String.fromCharCode(...b.slice(from, to));
+  if (ascii(0, 4) === 'RIFF' && ascii(8, 12) === 'WEBP') return 'webp';
+  return null;
+}
+function photoError(msg) { const e = $('err-photo'); e.hidden = !msg; e.textContent = msg || ''; }
+async function setPhoto(file) {
+  photoError('');
+  if (!file) return;
+  if (file.size > 2 * 1024 * 1024) return photoError(t('e_photoSize'));
+  if (!(await photoType(file))) return photoError(t('e_photoType'));
+  photoFile = file;
+  const img = $('photoPreview');
+  if (img.src) URL.revokeObjectURL(img.src);
+  img.src = URL.createObjectURL(file);
+  img.hidden = false;
+  $('dropText').hidden = true;
+  $('photoClear').hidden = false;
+  renderPreview();
+}
+function clearPhoto() {
+  photoFile = null;
+  const img = $('photoPreview');
+  if (img.src) URL.revokeObjectURL(img.src);
+  img.removeAttribute('src'); img.hidden = true;
+  $('dropText').hidden = false; $('photoClear').hidden = true; $('photo').value = '';
+  photoError(''); renderPreview();
+}
+const drop = $('drop');
+['click'].forEach((ev) => drop.addEventListener(ev, () => $('photo').click()));
+drop.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('photo').click(); } });
+$('photoPick').addEventListener('click', () => $('photo').click());
+$('photoClear').addEventListener('click', clearPhoto);
+$('photo').addEventListener('change', (e) => setPhoto(e.target.files[0]));
+drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
+drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+drop.addEventListener('drop', (e) => { e.preventDefault(); drop.classList.remove('over'); setPhoto(e.dataTransfer.files[0]); });
+
+// ---------------------------------------------------------------- map
+let map = null, marker = null;
+const round6 = (n) => Math.round(n * 1e6) / 1e6;
+function placePin(la, ln, pan = true) {
+  if (!map) return;
+  if (!marker) marker = L.marker([la, ln], { draggable: true }).addTo(map).on('dragend', (e) => {
+    const p = e.target.getLatLng(); lat.value = round6(p.lat); lng.value = round6(p.lng); onInput();
+  });
+  marker.setLatLng([la, ln]);
+  if (pan) map.panTo([la, ln]);
+}
+try {
+  map = L.map('map', { scrollWheelZoom: false }).setView([11.5564, 104.9282], 12);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19, attribution: '&copy; OpenStreetMap contributors',
+  }).addTo(map);
+  map.on('click', (e) => { lat.value = round6(e.latlng.lat); lng.value = round6(e.latlng.lng); placePin(e.latlng.lat, e.latlng.lng, false); onInput(); });
+} catch {
+  $('map').hidden = true; $('mapFallback').hidden = false; $('locClear').hidden = true;
+}
+[lat, lng].forEach((el) => el.addEventListener('change', () => {
+  const la = Number(lat.value), ln = Number(lng.value);
+  if (lat.value && lng.value && Math.abs(la) <= 90 && Math.abs(ln) <= 180) placePin(la, ln);
+}));
+$('locClear').addEventListener('click', () => { lat.value = ''; lng.value = ''; if (marker) { marker.remove(); marker = null; } onInput(); });
+$('locMe').addEventListener('click', () => {
+  if (!navigator.geolocation) return showBanner('err', t('geoFailed'));
+  navigator.geolocation.getCurrentPosition(
+    (pos) => { lat.value = round6(pos.coords.latitude); lng.value = round6(pos.coords.longitude); placePin(pos.coords.latitude, pos.coords.longitude); onInput(); },
+    () => showBanner('err', t('geoFailed')),
+    { enableHighAccuracy: true, timeout: 8000 },
+  );
+});
+
+// ---------------------------------------------------------------- live updates
+function onInput() {
+  $('strength').dataset.score = String(score(pw.value));
+  validate();
+  renderPreview();
+}
+document.getElementById('form').addEventListener('input', onInput);
+document.querySelectorAll('#form input').forEach((el) => el.addEventListener('blur', () => { if (el.id) { touched.add(el.id); validate(); } }));
+
+// ---------------------------------------------------------------- banner
+function showBanner(kind, msg) {
+  const b = $('banner');
+  b.className = 'banner ' + kind; b.textContent = msg; b.hidden = !msg;
+  if (msg) b.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+
+// ---------------------------------------------------------------- API connection (Bearer token, kept in memory)
+const apiBase = () => $('apiUrl').value.trim().replace(/\/+$/, '');
+function refreshConn() {
+  const c = $('conn');
+  c.classList.toggle('on', !!token);
+  c.textContent = token ? t('connected', { who }) : t('notConnected');
+}
+$('apiLogin').addEventListener('click', async () => {
+  const btn = $('apiLogin');
+  btn.disabled = true;
+  try {
+    const res = await fetch(apiBase() + '/auth/login', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'omit',
+      body: JSON.stringify({ email: $('apiEmail').value.trim(), password: $('apiPassword').value }),
+    });
+    const body = await res.json();
+    if (!res.ok) throw new Error(body?.error?.message || res.statusText);
+    token = body.data.accessToken; who = $('apiEmail').value.trim();
+    $('apiPassword').value = '';
+    refreshConn();
+  } catch (e) {
+    token = null;
+    const c = $('conn'); c.classList.remove('on');
+    c.textContent = e instanceof TypeError ? t('cannotReach', { url: apiBase() }) : t('loginFailed', { msg: e.message });
+  } finally { btn.disabled = false; }
+});
+
+// ---------------------------------------------------------------- submit
+const FIELD_OF = { EMAIL_TAKEN: ['email', 'e_taken'], CANNOT_MANAGE_ROLE: ['role', 'e_role'], LOCATION_INCOMPLETE: ['latitude', 'e_pair'] };
+$('form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  submitted = true;
+  const errors = validate();
+  if (Object.keys(errors).length) {
+    showBanner('err', t('e_fix'));
+    document.querySelector('.field.invalid input, .field.invalid select')?.focus();
+    return;
+  }
+  if (!token) { showBanner('ok', t('checkedOnly')); $('apiBox').open = true; return; }
+
+  const save = $('save'); save.disabled = true; save.querySelector('span').textContent = t('saving');
+  try {
+    const p = payload();
+    const res = await fetch(apiBase() + '/users', {
+      method: 'POST', credentials: 'omit',
+      headers: { 'content-type': 'application/json', authorization: 'Bearer ' + token },
+      body: JSON.stringify(p),
+    });
+    const body = await res.json();
+    if (!res.ok) {
+      const code = body?.error?.code;
+      if (FIELD_OF[code]) setError(FIELD_OF[code][0], t(FIELD_OF[code][1]));
+      showBanner('err', (FIELD_OF[code] ? t(FIELD_OF[code][1]) : body?.error?.message) || res.statusText);
+      return;
+    }
+    const user = body.data;
+    if (photoFile) {
+      const form = new FormData();
+      form.append('file', photoFile);
+      const up = await fetch(apiBase() + '/users/' + user.id + '/photo', {
+        method: 'PUT', credentials: 'omit', headers: { authorization: 'Bearer ' + token }, body: form,
+      });
+      const upBody = await up.json();
+      if (!up.ok) return showBanner('err', t('photoFailed', { msg: upBody?.error?.message || up.statusText }));
+    }
+    showBanner('ok', t(photoFile ? 'createdPhoto' : 'created', { name: user.fullName }));
+    resetForm(false);
+  } catch (err) {
+    showBanner('err', t('cannotReach', { url: apiBase() }));
+  } finally {
+    save.disabled = false; save.querySelector('span').textContent = t('save');
+  }
+});
+
+function resetForm(clearBanner = true) {
+  $('form').reset(); clearPhoto(); submitted = false; touched.clear();
+  if (marker) { marker.remove(); marker = null; }
+  ['fullName', 'email', 'password', 'phone', 'address', 'latitude', 'longitude', 'role'].forEach((k) => setError(k, ''));
+  if (clearBanner) showBanner('', '');
+  onInput();
+}
+$('reset').addEventListener('click', () => resetForm(true));
+
+// ---------------------------------------------------------------- helpers
+$('copy').addEventListener('click', async () => {
+  const text = JSON.stringify(payload(), null, 2);
+  try { await navigator.clipboard.writeText(text); $('copy').textContent = t('copied'); setTimeout(() => ($('copy').textContent = t('copyJson')), 1500); }
+  catch { const r = document.createRange(); r.selectNodeContents($('preview')); getSelection().removeAllRanges(); getSelection().addRange(r); }
+});
+$('sample').addEventListener('click', () => {
+  $('fullName').value = 'Sok Dara';
+  $('email').value = 'dara@example.com';
+  pw.value = 'Dara-pass-123';
+  $('r-STAFF').checked = true;
+  $('phone').value = '+85512345678';
+  $('isActive').checked = true;
+  $('address').value = 'St. 271, Sangkat Tuol Tumpung, Phnom Penh';
+  lat.value = 11.5564; lng.value = 104.9282; placePin(11.5564, 104.9282);
+  onInput();
+});
+$('langEn').addEventListener('click', () => applyLang('en'));
+$('langKm').addEventListener('click', () => applyLang('km'));
+let saved = 'en';
+try { saved = localStorage.getItem('createUserLang') || 'en'; } catch {}
+applyLang(saved === 'km' ? 'km' : 'en');
+if (location.hash === '#sample') $('sample').click();
+onInput();
+</script>
+</body>
+</html>

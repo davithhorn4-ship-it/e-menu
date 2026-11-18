@@ -3,10 +3,11 @@ import {
   Body,
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   Post,
   Req,
   Res,
-  UnauthorizedException,
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import {
@@ -27,15 +28,15 @@ import { SkipCsrf } from 'src/common/decorators/skip-csrf.decorator';
 import { ErrorResponseDto } from 'src/common/dto/error-response.dto';
 import { EmptySuccessResponseDto } from 'src/common/dto/success-response.dto';
 import {
-  accessTokenCookieOptions,
-  clearAccessTokenCookieOptions,
-  clearRefreshTokenCookieOptions,
-  refreshTokenCookieOptions,
+  clearAuthCookies,
+  setAuthCookies,
 } from 'src/common/http/cookie-options';
+import { getCookie } from 'src/common/http/request-cookies';
 import type { AuthRequest } from 'src/common/types/auth-request.type';
 import { UsersService } from 'src/modules/users/users.service';
 
-import { AuthService } from './auth.service';
+import { AuthErrors } from './auth.errors';
+import { type AuthTokens, AuthService } from './auth.service';
 import { loginApiBody } from './dto/auth-body.docs';
 import {
   loginBadRequestResponse,
@@ -47,6 +48,7 @@ import {
 } from './dto/auth-response.docs';
 import { LoginResponseDto, MeResponseDto } from './dto/auth-response.dto';
 import { LoginDto } from './dto/login.dto';
+import { RefreshTokenDto } from './dto/refresh-token.dto';
 
 @ApiTags('authentication')
 @Controller('auth')
@@ -60,6 +62,7 @@ export class AuthController {
   @SkipCsrf()
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('login')
+  @HttpCode(HttpStatus.OK)
   @ApiExtraModels(ErrorResponseDto)
   @ApiOperation({ summary: 'Sign in with email and password' })
   @ApiBody(loginApiBody)
@@ -74,28 +77,17 @@ export class AuthController {
     @Body() body: LoginDto,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const { accessToken, refreshToken } = await this.auth.login(
-      body.email,
-      body.password,
-    );
-
-    res.cookie('accessToken', accessToken, accessTokenCookieOptions());
-    res.cookie('refreshToken', refreshToken, refreshTokenCookieOptions());
-
-    return {
-      success: true,
-      data: {
-        accessToken,
-        refreshToken,
-      },
-    };
+    const tokens = await this.auth.login(body.email, body.password);
+    return this.sendTokens(res, tokens);
   }
 
   @Public()
   @SkipCsrf()
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('refresh')
+  @HttpCode(HttpStatus.OK)
   @ApiCookieAuth('refreshToken')
+  @ApiBody({ type: RefreshTokenDto, required: false })
   @ApiOperation({ summary: 'Refresh access and refresh tokens' })
   @ApiOkResponse({
     description: 'Tokens refreshed successfully and auth cookies are updated',
@@ -103,55 +95,41 @@ export class AuthController {
   })
   @ApiUnauthorizedResponse(loginUnauthorizedResponse)
   async refresh(
-    @Body() body: { refreshToken?: string } | undefined,
+    @Body() body: RefreshTokenDto,
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const refreshToken = body?.refreshToken ?? req.cookies?.refreshToken;
-    const { accessToken, refreshToken: nextRefreshToken } =
-      await this.auth.refresh(refreshToken);
-
-    res.cookie('accessToken', accessToken, accessTokenCookieOptions());
-    res.cookie('refreshToken', nextRefreshToken, refreshTokenCookieOptions());
-
-    return {
-      success: true,
-      data: {
-        accessToken,
-        refreshToken: nextRefreshToken,
-      },
-    };
+    const tokens = await this.auth.refresh(refreshTokenOf(body, req));
+    return this.sendTokens(res, tokens);
   }
 
   @Public()
   @SkipCsrf()
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('logout')
+  @HttpCode(HttpStatus.OK)
   @ApiCookieAuth('refreshToken')
+  @ApiBody({ type: RefreshTokenDto, required: false })
   @ApiOperation({
     summary: 'Sign out and clear auth cookies',
     description:
-      'Idempotent logout. Clears access and refresh cookies and returns success even if the refresh token cookie is missing, invalid, or already expired.',
+      'Idempotent logout. Ends the session of the refresh token sent in the body or the refreshToken cookie, clears both cookies, and returns success even if the token is missing, invalid, or already expired.',
   })
   @ApiOkResponse({
     description:
       'Logout successful. This endpoint always returns success and clears auth cookies even when no valid refresh token is present.',
     type: EmptySuccessResponseDto,
   })
-  async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    const refreshToken = req.cookies?.refreshToken;
+  async logout(
+    @Body() body: RefreshTokenDto,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const refreshToken = refreshTokenOf(body, req);
+    if (refreshToken) await this.auth.logoutByRefreshToken(refreshToken);
 
-    if (refreshToken) {
-      await this.auth.logoutByRefreshToken(refreshToken);
-    }
-
-    res.clearCookie('accessToken', clearAccessTokenCookieOptions());
-    res.clearCookie('refreshToken', clearRefreshTokenCookieOptions());
-
-    return {
-      success: true,
-      data: null,
-    };
+    clearAuthCookies(res);
+    return { success: true, data: null };
   }
 
   @Get('me')
@@ -168,18 +146,19 @@ export class AuthController {
   @ApiForbiddenResponse(meForbiddenResponse)
   async me(@Req() req: AuthRequest) {
     const uid = req.user?.userId;
-    if (!uid) {
-      throw new UnauthorizedException({
-        code: 'ACCESS_TOKEN_REQUIRED',
-        message: 'Access token is required',
-      });
-    }
+    if (!uid) throw AuthErrors.accessTokenRequired();
 
     const user = await this.users.findSafeById(uid);
+    return { success: true, data: { user } };
+  }
 
-    return {
-      success: true,
-      data: { user },
-    };
+  /** Sets the auth cookies and returns the tokens in the body too. */
+  private sendTokens(res: Response, tokens: AuthTokens) {
+    setAuthCookies(res, tokens);
+    return { success: true, data: tokens };
   }
 }
+
+/** Refresh token from the body (clients without cookies) or the cookie. */
+const refreshTokenOf = (body: RefreshTokenDto | undefined, req: Request) =>
+  body?.refreshToken ?? getCookie(req, 'refreshToken');

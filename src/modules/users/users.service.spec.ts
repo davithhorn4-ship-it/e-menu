@@ -48,6 +48,7 @@ describe('canManageUserRole', () => {
 
 describe('UsersService', () => {
   let prisma: any;
+  let storage: { save: jest.Mock; remove: jest.Mock };
   let service: UsersService;
 
   beforeEach(() => {
@@ -65,7 +66,11 @@ describe('UsersService', () => {
       },
       $transaction: jest.fn((ops) => Promise.all(ops)),
     };
-    service = new UsersService(prisma);
+    storage = {
+      save: jest.fn().mockResolvedValue('/uploads/users/new.png'),
+      remove: jest.fn().mockResolvedValue(undefined),
+    };
+    service = new UsersService(prisma, storage as any);
   });
 
   it('never selects the password hash', () => {
@@ -195,5 +200,119 @@ describe('UsersService', () => {
       NotFoundException,
     );
     expect(prisma.user.delete).not.toHaveBeenCalled();
+  });
+
+  it('answers 409 USER_HAS_SHOP_MEMBERSHIP when the user works in a shop', async () => {
+    prisma.user.delete.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('fk', {
+        code: 'P2003',
+        clientVersion: 'test',
+      }),
+    );
+    await expect(service.deleteUser('staff-2', admin)).rejects.toMatchObject({
+      status: 409,
+      response: { code: 'USER_HAS_SHOP_MEMBERSHIP' },
+    });
+  });
+
+  describe('location', () => {
+    it('saves address and a full map position on create', async () => {
+      await service.createUser(
+        {
+          fullName: 'Loc',
+          email: 'loc@example.com',
+          password: 'password123',
+          address: '  St. 271, Phnom Penh ',
+          latitude: 11.5564,
+          longitude: 104.9282,
+        },
+        admin,
+      );
+      expect(prisma.user.create.mock.calls[0][0].data).toMatchObject({
+        address: 'St. 271, Phnom Penh',
+        latitude: 11.5564,
+        longitude: 104.9282,
+      });
+    });
+
+    it('refuses half a position with LOCATION_INCOMPLETE', async () => {
+      await expect(
+        service.updateUser('staff-2', { latitude: 11.5 }, admin),
+      ).rejects.toMatchObject({ response: { code: 'LOCATION_INCOMPLETE' } });
+      await expect(
+        service.updateUser('staff-2', { latitude: 11.5, longitude: null }, admin),
+      ).rejects.toMatchObject({ response: { code: 'LOCATION_INCOMPLETE' } });
+      expect(prisma.user.update).not.toHaveBeenCalled();
+    });
+
+    it('clears the position when both are null', async () => {
+      await service.updateUser(
+        'staff-2',
+        { latitude: null, longitude: null, address: null },
+        admin,
+      );
+      expect(prisma.user.update.mock.calls[0][0].data).toMatchObject({
+        latitude: null,
+        longitude: null,
+        address: null,
+      });
+    });
+  });
+
+  describe('photo', () => {
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
+
+    it('stores a PNG, sets photoUrl and deletes the old upload', async () => {
+      prisma.user.findUnique.mockResolvedValue(
+        row({ photoUrl: '/uploads/users/old.png' }),
+      );
+      await service.setPhoto('staff-2', { buffer: png }, admin);
+      expect(storage.save).toHaveBeenCalledWith('users', png, 'png');
+      expect(prisma.user.update.mock.calls[0][0].data).toEqual({
+        photoUrl: '/uploads/users/new.png',
+      });
+      expect(storage.remove).toHaveBeenCalledWith('/uploads/users/old.png');
+    });
+
+    it('refuses a missing file, a fake image and a file over 2 MB', async () => {
+      await expect(service.setPhoto('staff-2', undefined, admin)).rejects.toMatchObject({
+        response: { code: 'PHOTO_REQUIRED' },
+      });
+      await expect(
+        service.setPhoto('staff-2', { buffer: Buffer.from('<svg onload=alert(1)>') }, admin),
+      ).rejects.toMatchObject({ status: 415, response: { code: 'PHOTO_TYPE_NOT_ALLOWED' } });
+      const big = Buffer.concat([png, Buffer.alloc(2 * 1024 * 1024)]);
+      await expect(service.setPhoto('staff-2', { buffer: big }, admin)).rejects.toMatchObject({
+        status: 413,
+        response: { code: 'PHOTO_TOO_LARGE' },
+      });
+      expect(storage.save).not.toHaveBeenCalled();
+    });
+
+    it('removes the new file again when the database update fails', async () => {
+      prisma.user.update.mockRejectedValue(new Error('db down'));
+      await expect(service.setPhoto('staff-2', { buffer: png }, admin)).rejects.toThrow('db down');
+      expect(storage.remove).toHaveBeenCalledWith('/uploads/users/new.png');
+    });
+
+    it('refuses a MANAGER changing an ADMIN photo', async () => {
+      prisma.user.findUnique.mockResolvedValue(row({ id: 'admin-9', role: Role.ADMIN }));
+      await expect(service.setPhoto('admin-9', { buffer: png }, manager)).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+    });
+
+    it('removes the photo and its file', async () => {
+      prisma.user.findUnique.mockResolvedValue(row({ photoUrl: '/uploads/users/old.png' }));
+      await service.removePhoto('staff-2', admin);
+      expect(prisma.user.update.mock.calls[0][0].data).toEqual({ photoUrl: null });
+      expect(storage.remove).toHaveBeenCalledWith('/uploads/users/old.png');
+    });
+
+    it('deletes the uploaded photo when the user is deleted', async () => {
+      prisma.user.findUnique.mockResolvedValue(row({ photoUrl: '/uploads/users/old.png' }));
+      await service.deleteUser('staff-2', admin);
+      expect(storage.remove).toHaveBeenCalledWith('/uploads/users/old.png');
+    });
   });
 });

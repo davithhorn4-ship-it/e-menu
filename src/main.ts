@@ -3,6 +3,7 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { Logger as PinoLogger } from 'nestjs-pino';
 import {
+  HttpException,
   Logger,
   UnsupportedMediaTypeException,
   ValidationPipe,
@@ -27,6 +28,22 @@ import { serverTimingMiddleware } from './middleware/server-timing.middleware';
 import { AuthService } from './modules/auth/auth.service';
 import { setAuthUserLookup } from './common/strategy/auth-user-lookup';
 import { setupApiDocs } from './common/http/swagger';
+import { parseTrustProxy } from './common/security/trust-proxy';
+import {
+  uploadRoot,
+  UPLOADS_URL_PREFIX,
+} from './common/storage/local-file-storage';
+import {
+  makeAccessTokenCheck,
+  selectAccessToken,
+} from './common/strategy/access-token';
+import type { AuthRequest } from './common/types/auth-request.type';
+import type { NextFunction, Request, Response } from 'express';
+
+/** Routes that may receive multipart/form-data (file uploads). */
+const MULTIPART_ROUTES: Array<{ method: string; path: RegExp }> = [
+  { method: 'PUT', path: /^\/users\/[0-9a-f-]{36}\/photo\/?$/i },
+];
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
@@ -34,13 +51,15 @@ async function bootstrap() {
     bodyParser: false,
   });
 
-  app.set('trust proxy', 1);
+  const config = app.get(ConfigService);
+  // Only trust X-Forwarded-For from proxies that really exist (TRUST_PROXY);
+  // otherwise clients could pick their own IP and skip the rate limits.
+  app.set('trust proxy', parseTrustProxy(config.get<string>('TRUST_PROXY')));
   app.useLogger(app.get(PinoLogger));
   // First middleware so the timing covers CORS, auth, guards and handlers.
   app.use(serverTimingMiddleware);
 
   const logger = new Logger('Bootstrap');
-  const config = app.get(ConfigService);
 
   process.on('unhandledRejection', (reason) => {
     logger.error(`Unhandled rejection: ${String(reason)}`);
@@ -97,7 +116,7 @@ async function bootstrap() {
     maxAge: 86400,
   });
 
-  app.use((req, res, next) => {
+  app.use((req: Request, res: Response, next: NextFunction) => {
     if (req.method === 'OPTIONS') {
       return res.sendStatus(204);
     }
@@ -111,8 +130,23 @@ async function bootstrap() {
     }),
   );
 
+  // ---- Uploaded files (profile photos) ----
+  // Public, read-only images under /uploads/. File names are random UUIDs.
+  // CORP cross-origin so the dashboard on another origin can show them.
+  app.useStaticAssets(uploadRoot(config.get<string>('UPLOAD_DIR')), {
+    prefix: UPLOADS_URL_PREFIX,
+    index: false,
+    dotfiles: 'deny',
+    redirect: false,
+    setHeaders: (res) => {
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+      res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+    },
+  });
+
   if (!isProd) {
-    app.use((req, res, next) => {
+    app.use((req: Request, res: Response, next: NextFunction) => {
       res.on('finish', () => {
         logger.debug(
           `REQ ${req.method} ${req.originalUrl} -> ${res.statusCode}`,
@@ -125,7 +159,7 @@ async function bootstrap() {
   app.useGlobalFilters(new HttpErrorFilter());
 
   // ---- Content-Type guard (skip OPTIONS) ----
-  app.use((req, _res, next) => {
+  app.use((req: Request, _res: Response, next: NextFunction) => {
     const m = req.method;
 
     if (m === 'OPTIONS') return next();
@@ -139,7 +173,15 @@ async function bootstrap() {
       hasBody &&
       (m === 'POST' || m === 'PUT' || m === 'PATCH' || m === 'DELETE')
     ) {
-      if (!contentType || !req.is || !req.is('application/json')) {
+      // File uploads (multipart/form-data) are accepted only on the routes
+      // listed in MULTIPART_ROUTES; every other body must be JSON.
+      const isAllowedUpload =
+        MULTIPART_ROUTES.some((r) => r.method === m && r.path.test(req.path)) &&
+        !!req.is('multipart/form-data');
+      if (
+        !isAllowedUpload &&
+        (!contentType || !req.is || !req.is('application/json'))
+      ) {
         return next(
           new UnsupportedMediaTypeException({
             code: 'UNSUPPORTED_MEDIA_TYPE',
@@ -193,44 +235,37 @@ async function bootstrap() {
   app.use(compression({ threshold: '1kb' }));
   app.use(cookieParser());
 
-  // ---- Attach req.user if token exists ----
+  // ---- Attach req.user if a valid token is sent ----
+  // Sets req.user early (request logs show who called) and stores the user
+  // lookup so JwtStrategy does not load the same user again. It never
+  // rejects a request: the guards decide that.
   const authService = app.get(AuthService);
-  app.use((req, _res, next) => {
-    (async () => {
-      // Skip on OPTIONS (already handled above, but safe)
-      if (req.method === 'OPTIONS') return;
+  const isValidAccessToken = makeAccessTokenCheck(
+    config.getOrThrow<string>('JWT_ACCESS_SECRET'),
+  );
+  const attachUser = async (req: AuthRequest) => {
+    // Same choice as JwtStrategy (Bearer, or the cookie when the Bearer
+    // token is invalid), so the guard can reuse this lookup.
+    const token = selectAccessToken(req, isValidAccessToken);
+    if (!token) return;
 
-      const authHeader = req.headers?.authorization as string | undefined;
-      const bearer =
-        authHeader && authHeader.startsWith('Bearer ')
-          ? authHeader.slice(7)
-          : undefined;
-
-      const cookieToken = req?.cookies?.accessToken;
-      const token = bearer ?? cookieToken;
-
-      if (!token) return;
-
-      try {
-        const user = await authService.getUserFromAccessToken(
-          token,
-          // Share the lookup with JwtStrategy so the guard does not load the
-          // same user again for this request.
-          (sub, loaded) => setAuthUserLookup(req, { token, sub, user: loaded }),
-        );
-        req.user = {
-          userId: user.id,
-          email: user.email,
-          role: user.role,
-        };
-      } catch (err) {
-        if (!(err as any)?.getStatus || (err as any).getStatus?.() >= 500) {
-          logger.warn(`Auth attach middleware failed: ${err}`);
-        }
+    try {
+      const user = await authService.getUserFromAccessToken(
+        token,
+        (sub, loaded) => setAuthUserLookup(req, { token, sub, user: loaded }),
+      );
+      req.user = { userId: user.id, email: user.email, role: user.role };
+    } catch (err) {
+      // 4xx = bad or expired token, answered later by the guard. Only
+      // unexpected failures (e.g. database down) are worth a log line.
+      if (!(err instanceof HttpException) || err.getStatus() >= 500) {
+        logger.warn(`Auth attach middleware failed: ${String(err)}`);
       }
-    })()
-      .then(() => next())
-      .catch(() => next());
+    }
+  };
+  app.use((req: AuthRequest, _res: Response, next: NextFunction) => {
+    if (req.method === 'OPTIONS') return next();
+    void attachUser(req).finally(() => next());
   });
 
   // ✅ Required headers should NOT block OPTIONS (we already returned for OPTIONS above)

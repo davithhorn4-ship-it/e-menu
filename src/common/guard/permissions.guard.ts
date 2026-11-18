@@ -10,6 +10,7 @@ import type { Role } from '@prisma/client';
 import { PermissionsService } from 'src/modules/permissions/permissions.service';
 import { PERMISSIONS_KEY } from '../decorators/require-permissions.decorator';
 import { isFullAccess } from '../roles/role-groups';
+import type { AuthRequest } from '../types/auth-request.type';
 
 @Injectable()
 export class PermissionsGuard implements CanActivate {
@@ -27,7 +28,7 @@ export class PermissionsGuard implements CanActivate {
     );
     if (!required || required.length === 0) return true;
 
-    const req = ctx.switchToHttp().getRequest();
+    const req = ctx.switchToHttp().getRequest<AuthRequest>();
     const user = req.user;
     const userRole: Role | undefined = user?.role;
 

@@ -2,8 +2,7 @@ import { getSchemaPath } from '@nestjs/swagger';
 import { ErrorResponseDto } from 'src/common/dto/error-response.dto';
 
 export const loginBadRequestResponse = {
-  description:
-    'Login request body is invalid or password login is unavailable.',
+  description: 'Login request body is invalid.',
   schema: { $ref: getSchemaPath(ErrorResponseDto) },
   examples: {
     validationFailed: {
@@ -15,17 +14,6 @@ export const loginBadRequestResponse = {
           message:
             'email must be an email; password must be longer than or equal to 8 characters',
           type: 'Bad Request',
-        },
-      },
-    },
-    passwordLoginNotAvailable: {
-      summary: 'Password login not available',
-      value: {
-        success: false,
-        error: {
-          code: 'PASSWORD_LOGIN_NOT_AVAILABLE',
-          message: 'Password login is not available for this account',
-          type: 'BadRequestException',
         },
       },
     },

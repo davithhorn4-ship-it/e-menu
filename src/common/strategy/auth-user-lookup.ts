@@ -1,4 +1,4 @@
-import type { Prisma } from '@prisma/client';
+import type { Prisma, Role } from '@prisma/client';
 
 /**
  * The only user fields needed to authenticate a request. Never add
@@ -15,6 +15,52 @@ export const AUTH_USER_SELECT = {
 export type AuthUser = Prisma.UserGetPayload<{
   select: typeof AUTH_USER_SELECT;
 }>;
+
+/**
+ * True when a token was issued before the user's password last changed, so
+ * it must be refused.
+ *
+ * JWT `iat` is in whole seconds while passwordChangedAt has milliseconds, so
+ * the comparison is done in seconds: a token issued in the same second as the
+ * change is accepted. Comparing milliseconds would reject the token of a login
+ * made right after a password reset for its whole lifetime.
+ */
+export function issuedBeforePasswordChange(
+  iat: number | undefined,
+  passwordChangedAt: Date | null | undefined,
+): boolean {
+  if (!passwordChangedAt || typeof iat !== 'number') return false;
+  return iat < Math.floor(passwordChangedAt.getTime() / 1000);
+}
+
+/** Why a token's user may not be authenticated. */
+export type AuthUserProblem = 'AUTH_UNAUTHORIZED' | 'AUTH_TOKEN_EXPIRED';
+
+/**
+ * Checks the user an access token belongs to: it must exist, be active and
+ * not have changed its password after the token was issued. Returns the
+ * problem, or null when the user may proceed. Shared by JwtStrategy and
+ * AuthService.getUserFromAccessToken so both apply the same rules.
+ */
+export function authUserProblem(
+  user: AuthUser | null,
+  iat: number | undefined,
+): AuthUserProblem | null {
+  if (!user || !user.isActive) return 'AUTH_UNAUTHORIZED';
+  if (issuedBeforePasswordChange(iat, user.passwordChangedAt)) {
+    return 'AUTH_TOKEN_EXPIRED';
+  }
+  return null;
+}
+
+/** Payload of an access token (see AuthService.signTokens). */
+export interface AccessTokenPayload {
+  sub: string;
+  email?: string;
+  role?: Role;
+  tokenType?: 'access' | 'refresh';
+  iat?: number;
+}
 
 /**
  * Result of the user lookup done by the global "attach req.user" middleware
